@@ -90,7 +90,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
       email,
       password: hashedPassword,
       profileImage: profileImageUrl, 
-      accountType, // نوع الحساب
+      accountType, 
       studentId: accountType === 'Student' ? studentId : undefined,
       major: accountType === 'Student' ? major : undefined,
       universityName: accountType === 'University' ? universityName : undefined,
@@ -119,6 +119,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     });
   }
 });
+
 
 // **تسجيل الدخول**
 app.post('/login', async (req, res) => {
