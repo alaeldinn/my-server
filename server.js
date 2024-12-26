@@ -317,7 +317,9 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 
 
 // تعريف نموذج للعقار في قاعدة البيانات
-const Property = mongoose.model('Property', new mongoose.Schema({
+
+// نموذج (Schema) العقار
+const PropertySchema = new mongoose.Schema({
   email: String,
   firstName: String,
   lastName: String,
@@ -329,26 +331,20 @@ const Property = mongoose.model('Property', new mongoose.Schema({
   rooms: Number,
   baths: Number,
   location: {
-    lat: { type: Decimal128 },
-    lng: { type: Decimal128 }
+    lat: Number,
+    lng: Number,
   },
-  imageUrl: String, 
-}));
+  imageUrl: String,
+});
 
-// إضافة عقار جديد
-app.post('/addProperty', async (req, res) => {
-  console.log("Request Body:", req.body); // لعرض البيانات المرسلة
+const Property = mongoose.model('Property', PropertySchema);
+
+// Endpoint لإضافة العقار
+app.post('/addProperty', upload.single('file'), async (req, res) => {
   try {
-    const { email, firstName, lastName, profileImage, ownerId, type, price, size, rooms, baths, location, imageUrl } = req.body;
-    
-    const lat = location?.lat;
-    const lng = location?.lng;
+    const { email, firstName, lastName, profileImage, ownerId, type, price, size, rooms, baths, location } = req.body;
+    const imageUrl = req.file ? req.file.path : null;
 
-    if (!email || !firstName || !lastName || !type || !price || !size || !lat || !lng) {
-      return res.status(400).json({ status: 'error', message: 'All fields are required!' });
-    }
-
-    // يمكن إضافة تحقق من الحقول الاختيارية مثل 'rooms' و 'baths'
     const newProperty = new Property({
       email,
       firstName,
@@ -358,25 +354,20 @@ app.post('/addProperty', async (req, res) => {
       type,
       price,
       size,
-      rooms: rooms || 1,  // إذا كانت rooms غير موجودة، فرض قيمتها إلى 1
-      baths: baths || 1,  // إذا كانت baths غير موجودة، فرض قيمتها إلى 1
-      location: { lat: lat, lng: lng },
-      imageUrl
+      rooms,
+      baths,
+      location: {
+        lat: location.lat,
+        lng: location.lng,
+      },
+      imageUrl,
     });
 
     await newProperty.save();
-    res.status(201).json({
-      status: 'success',
-      message: 'Property added successfully!',
-      property: newProperty
-    });
+    res.status(201).json({ message: 'Property added successfully' });
   } catch (error) {
-    console.error('Error adding property:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'An error occurred while adding the property.',
-      error: error.message,
-    });
+    console.log(error);
+    res.status(500).json({ message: 'Error occurred while adding property' });
   }
 });
 
