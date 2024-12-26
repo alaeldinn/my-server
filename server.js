@@ -320,21 +320,32 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 
 // نموذج (Schema) العقار
 const PropertySchema = new mongoose.Schema({
-  email: String,
-  firstName: String,
-  lastName: String,
-  profileImage: String,
-  ownerId: String,
-  type: String,
-  price: String,
-  size: String,
-  rooms: Number,
-  baths: Number,
+  email: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  profileImage: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  hostelName: { type: String, required: true },
+  roomType: { type: String, required: true },
+  internetAvailable: { type: Boolean, required: true },
+  bathroomType: { type: String, required: true },
+  cleaningService: { type: Boolean, required: true },
+  maintenanceService: { type: Boolean, required: true },
+  securitySystem: { type: Boolean, required: true },
+  emergencyMeasures: { type: Boolean, required: true },
+  goodLighting: { type: Boolean, required: true },
+  sharedAreas: { type: Boolean, required: true },
+  studyRooms: { type: Boolean, required: true },
+  laundryRoom: { type: Boolean, required: true },
+  sharedKitchen: { type: Boolean, required: true },
+  foodService: { type: Boolean, required: true },
+  effectiveManagement: { type: Boolean, required: true },
+  psychologicalSupport: { type: Boolean, required: true },
   location: {
-    lat: Number,
-    lng: Number,
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
   },
-  imageUrl: String,
+  imageUrl: { type: String, required: true }, // رابط الصورة من Cloudinary
 });
 
 const Property = mongoose.model('Property', PropertySchema);
@@ -342,27 +353,60 @@ const Property = mongoose.model('Property', PropertySchema);
 // Endpoint لإضافة العقار
 app.post('/addProperty', upload.single('file'), async (req, res) => {
   try {
-    const { email, firstName, lastName, profileImage, ownerId, type, price, size, rooms, baths, location } = req.body;
-    const imageUrl = req.file ? req.file.path : null;
+    const { 
+      email, firstName, lastName, profileImage, ownerId, hostelName, roomType, 
+      internetAvailable, bathroomType, cleaningService, maintenanceService, 
+      securitySystem, emergencyMeasures, goodLighting, sharedAreas, 
+      studyRooms, laundryRoom, sharedKitchen, foodService, effectiveManagement, 
+      psychologicalSupport, location 
+    } = req.body;
 
+    // رفع الصورة إلى Cloudinary
+    let imageUrl = null;
+    if (req.file) {
+      const result = await cloudinary.uploader.upload_stream(
+        { resource_type: 'auto' },
+        (error, result) => {
+          if (error) {
+            return res.status(500).json({ message: 'Failed to upload image', error: error });
+          }
+          imageUrl = result.secure_url; // الحصول على رابط الصورة من Cloudinary
+        }
+      );
+      req.file.stream.pipe(result);
+    }
+
+    // إنشاء عقار جديد
     const newProperty = new Property({
       email,
       firstName,
       lastName,
       profileImage,
       ownerId,
-      type,
-      price,
-      size,
-      rooms,
-      baths,
+      hostelName,
+      roomType,
+      internetAvailable: internetAvailable === 'true', // تحويل النص إلى قيمة بوليانية
+      bathroomType,
+      cleaningService: cleaningService === 'true',
+      maintenanceService: maintenanceService === 'true',
+      securitySystem: securitySystem === 'true',
+      emergencyMeasures: emergencyMeasures === 'true',
+      goodLighting: goodLighting === 'true',
+      sharedAreas: sharedAreas === 'true',
+      studyRooms: studyRooms === 'true',
+      laundryRoom: laundryRoom === 'true',
+      sharedKitchen: sharedKitchen === 'true',
+      foodService: foodService === 'true',
+      effectiveManagement: effectiveManagement === 'true',
+      psychologicalSupport: psychologicalSupport === 'true',
       location: {
         lat: location.lat,
         lng: location.lng,
       },
-      imageUrl,
+      imageUrl: imageUrl || null, // إذا تم رفع صورة من Cloudinary
     });
 
+    // حفظ العقار في قاعدة البيانات
     await newProperty.save();
     res.status(201).json({ message: 'Property added successfully' });
   } catch (error) {
@@ -397,6 +441,7 @@ app.post('/filterProperties', async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
