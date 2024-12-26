@@ -151,21 +151,41 @@ app.post('/login', async (req, res) => {
 
     const token = jwt.sign({ id: user._id }, 'your_jwt_secret_key', { expiresIn: '1h' });
 
+    // بناء الاستجابة بناءً على نوع الحساب
+    let userData = {
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      profileImage: user.profileImage,
+    };
+
+    // إذا كان نوع الحساب "Student"
+    if (user.accountType === 'Student') {
+      userData = {
+        ...userData,
+        accountType: user.accountType,
+        studentId: user.studentId,
+        major: user.major,
+      };
+    }
+    // إذا كان نوع الحساب "University"
+    else if (user.accountType === 'University') {
+      userData = {
+        ...userData,
+        accountType: user.accountType,
+        universityName: user.universityName,
+        universityCode: user.universityCode,
+        universityAddress: user.universityAddress,
+        studentCount: user.studentCount,
+      };
+    }
+
     res.status(200).json({
       status: 'success',
       message: 'Login successful!',
       token: token,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        profileImage: user.profileImage, 
-        universityName:user.universityName,
-        universityCode:user.universityCode,
-        universityAddress:user.universityAddress,
-        studentCount:user.studentCount,
-      },
+      user: userData,  // إرجاع البيانات المناسبة بناءً على نوع الحساب
     });
   } catch (error) {
     res.status(500).json({
@@ -175,7 +195,6 @@ app.post('/login', async (req, res) => {
     });
   }
 });
-
 app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
   try {
     console.log('Received request to update profile:', req.body); // تتبع البيانات القادمة من العميل
