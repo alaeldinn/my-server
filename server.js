@@ -363,21 +363,40 @@ app.post('/addProperty', upload.single('file'), async (req, res) => {
 
     let imageUrl = "";
 
-    // التأكد من رفع الصورة
-    if (req.file) {
-      // رفع الصورة إلى Cloudinary باستخدام upload_stream
-      const result = await new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          { resource_type: 'auto' },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-          }
-        ).end(req.file.buffer); // إرسال الصورة عبر stream
-      });
+// التأكد من رفع الصورة
+if (req.file) {
+  // رفع الصورة إلى Cloudinary باستخدام upload_stream داخل callback
+  const buffer = req.file.buffer; // استخراج الـ buffer من الملف
 
-      imageUrl = result.secure_url; // الحصول على رابط الصورة من Cloudinary
+  // رفع الصورة إلى Cloudinary باستخدام Buffer
+  cloudinary.uploader.upload_stream(
+    { resource_type: 'auto' },  // تحديد نوع المورد (image, video, etc.)
+    (error, result) => {
+      if (error) {
+        console.error("Error uploading to Cloudinary:", error);
+        return res.status(500).json({
+          status: 'error',
+          message: 'Error uploading image to Cloudinary.',
+          error: error.message,
+        });
+      }
+
+      // إضافة رابط الصورة الآمن
+      imageUrl = result.secure_url;  // الحصول على رابط الصورة من Cloudinary
+
+      // استكمال تنفيذ العمليات الأخرى بعد رفع الصورة
+      // يمكنك الآن استخدام imageUrl هنا
+      // أكمل باقي الكود لحفظ الصورة أو تعديل البيانات في قاعدة البيانات
+      // يمكنك استخدام imageUrl في إضافة البيانات إلى قاعدة البيانات
+      res.status(200).json({
+        status: 'success',
+        message: 'Image uploaded successfully!',
+        imageUrl: imageUrl,  // إرسال رابط الصورة المرفوعة
+      });
     }
+  ).end(buffer);  // إرسال الـ buffer عبر stream مباشرة إلى Cloudinary
+}
+
 
     // إنشاء عقار جديد
     const newProperty = new Property({
