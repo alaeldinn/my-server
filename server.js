@@ -8,7 +8,7 @@ const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const { Decimal128 } = require('mongodb');
 const app = express();
-const port = 2025;
+const port = 3001;
 
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
 app.use(cors());
@@ -315,127 +315,101 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
   }
 });
 
-// نموذج العقار
-const propertySchema = new mongoose.Schema({
-  email: String,
-  firstName: String,
-  lastName: String,
-  profileImage: String, // رابط الصورة الشخصية للمستخدم
-  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // ربط العقار مع المستخدم
-  hostelName: String,
-  roomType: String,
-  internetAvailable: Boolean,
-  bathroomType: String,
-  cleaningService: Boolean,
-  maintenanceService: Boolean,
-  securitySystem: Boolean,
-  emergencyMeasures: Boolean,
-  goodLighting: Boolean,
-  sharedAreas: Boolean,
-  studyRooms: Boolean,
-  laundryRoom: Boolean,
-  sharedKitchen: Boolean,
-  foodService: Boolean,
-  effectiveManagement: Boolean,
-  psychologicalSupport: Boolean,
+
+// تعريف نموذج للعقار في قاعدة البيانات
+
+// تعريف نموذج العقار
+const PropertySchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  profileImage: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  hostelName: { type: String, required: true, default: "اسم غير محدد" },  // إضافة قيمة افتراضية
+  roomType: { type: String, required: true },
+  internetAvailable: { type: Boolean, required: true },
+  bathroomType: { type: String, required: true },
+  cleaningService: { type: Boolean, required: true },
+  maintenanceService: { type: Boolean, required: true },
+  securitySystem: { type: Boolean, required: true },
+  emergencyMeasures: { type: Boolean, required: true },
+  goodLighting: { type: Boolean, required: true },
+  sharedAreas: { type: Boolean, required: true },
+  studyRooms: { type: Boolean, required: true },
+  laundryRoom: { type: Boolean, required: true },
+  sharedKitchen: { type: Boolean, required: true },
+  foodService: { type: Boolean, required: true },
+  effectiveManagement: { type: Boolean, required: true },
+  psychologicalSupport: { type: Boolean, required: true },
   location: {
-    lat: Number,
-    lng: Number
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
   },
-  imageUrl1: String,
-  imageUrl2: String,
-  imageUrl3: String,
-  imageUrl4: String,
-  imageUrl5: String,
-  imageUrl6: String
+  imageUrl: { type: String, required: false }, // رابط الصورة من Cloudinary
 });
 
-const Property = mongoose.model('Property', propertySchema);
+const Property = mongoose.model('Property', PropertySchema);
 
-// **إضافة عقار**
-app.post('/addProperty', upload.array('propertyImages', 6), async (req, res) => {
-  try {
-    const { email, firstName, lastName, ownerId, hostelName, roomType, internetAvailable, bathroomType,
-      cleaningService, maintenanceService, securitySystem, emergencyMeasures, goodLighting, sharedAreas, 
-      studyRooms, laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport, 
-      location } = req.body;
+// نقطة النهاية لاستقبال البيانات
+app.post('/addProperty', upload.array('images', 6), async (req, res) => {
+  const {
+    email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
+    internetAvailable, bathroomType, cleaningService, maintenanceService, 
+    securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
+    laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
+    location, imageUrls
+  } = req.body;
 
-    // تحقق من صحة البيانات
-    if (!hostelName || !roomType || !location || !ownerId) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'All fields are required.'
-      });
-    }
-
-    // تحقق من وجود المالك
-    const owner = await User.findById(ownerId);
-    if (!owner) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Owner not found.'
-      });
-    }
-
-    // رفع الصور إلى Cloudinary
-    const uploadedImageUrls = [];
+  // تحميل الصور إلى Cloudinary
+  let uploadedImageUrls = [];
+  if (req.files) {
     for (const file of req.files) {
-      const result = await cloudinary.uploader.upload_stream({ resource_type: 'auto' }, (error, result) => {
-        if (error) {
-          return res.status(500).json({ message: 'Error uploading image to Cloudinary' });
-        }
-        uploadedImageUrls.push(result.secure_url); // إضافة رابط الصورة المرفوعة
-      });
-      file.buffer && result.end(file.buffer); // استخدام الـ buffer لرفع الصورة
+      try {
+        const imageUrl = await uploadImageToCloudinary(file);
+        uploadedImageUrls.push(imageUrl);
+      } catch (error) {
+        return res.status(500).send('Error uploading image to Cloudinary');
+      }
     }
+  }
 
-    // التأكد من عدد الصور (يجب أن تكون 6 صور أو أقل)
-    const [imageUrl1, imageUrl2, imageUrl3, imageUrl4, imageUrl5, imageUrl6] = uploadedImageUrls;
+  // إنشاء سجل جديد في قاعدة البيانات
+  const newProperty = new Property({
+    email,
+    firstName,
+    lastName,
+    profileImage,
+    ownerId,
+    hostelName,
+    roomType,
+    internetAvailable: internetAvailable === 'true',
+    bathroomType,
+    cleaningService: cleaningService === 'true',
+    maintenanceService: maintenanceService === 'true',
+    securitySystem: securitySystem === 'true',
+    emergencyMeasures: emergencyMeasures === 'true',
+    goodLighting: goodLighting === 'true',
+    sharedAreas: sharedAreas === 'true',
+    studyRooms: studyRooms === 'true',
+    laundryRoom: laundryRoom === 'true',
+    sharedKitchen: sharedKitchen === 'true',
+    foodService: foodService === 'true',
+    effectiveManagement: effectiveManagement === 'true',
+    psychologicalSupport: psychologicalSupport === 'true',
+    location: {
+      lat: location.lat,
+      lng: location.lng,
+    },
+    imageUrls: uploadedImageUrls.length ? uploadedImageUrls : imageUrls,
+  });
 
-    // إنشاء عقار جديد
-    const newProperty = new Property({
-      email,
-      firstName,
-      lastName,
-      profileImage: owner.profileImage, // صورة الملف الشخصي من بيانات المستخدم
-      ownerId,
-      hostelName,
-      roomType,
-      internetAvailable,
-      bathroomType,
-      cleaningService,
-      maintenanceService,
-      securitySystem,
-      emergencyMeasures,
-      goodLighting,
-      sharedAreas,
-      studyRooms,
-      laundryRoom,
-      sharedKitchen,
-      foodService,
-      effectiveManagement,
-      psychologicalSupport,
-      location,
-      imageUrl1,
-      imageUrl2,
-      imageUrl3,
-      imageUrl4,
-      imageUrl5,
-      imageUrl6
-    });
-
+  try {
+    // حفظ البيانات في قاعدة البيانات
     await newProperty.save();
-    res.status(201).json({
-      status: 'success',
-      message: 'Property added successfully!',
-      property: newProperty
-    });
+    res.status(201).send({ message: 'Property added successfully!' });
   } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'An error occurred while adding the property.',
-      error: error.message
-    });
+    console.error(error);
+    res.status(500).send('Error saving property');
   }
 });
 
