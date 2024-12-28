@@ -345,7 +345,7 @@ const PropertySchema = new mongoose.Schema({
     lat: { type: Number, required: true },
     lng: { type: Number, required: true },
   },
-  imageUrl: { type: String, required: true }, // رابط الصورة من Cloudinary
+  imageUrl: { type: String, required: false }, // رابط الصورة من Cloudinary
 });
 
 const Property = mongoose.model('Property', PropertySchema);
