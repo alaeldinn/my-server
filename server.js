@@ -317,40 +317,6 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 
 
 // تعريف نموذج للعقار في قاعدة البيانات
-
-// تعريف نموذج العقار
-const PropertySchema = new mongoose.Schema({
-  email: { type: String, required: true },
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  profileImage: { type: String, required: true },
-  ownerId: { type: String, required: true },
-  hostelName: { type: String, required: true, default: "اسم غير محدد" },  // إضافة قيمة افتراضية
-  roomType: { type: String, required: true },
-  internetAvailable: { type: Boolean, required: true },
-  bathroomType: { type: String, required: true },
-  cleaningService: { type: Boolean, required: true },
-  maintenanceService: { type: Boolean, required: true },
-  securitySystem: { type: Boolean, required: true },
-  emergencyMeasures: { type: Boolean, required: true },
-  goodLighting: { type: Boolean, required: true },
-  sharedAreas: { type: Boolean, required: true },
-  studyRooms: { type: Boolean, required: true },
-  laundryRoom: { type: Boolean, required: true },
-  sharedKitchen: { type: Boolean, required: true },
-  foodService: { type: Boolean, required: true },
-  effectiveManagement: { type: Boolean, required: true },
-  psychologicalSupport: { type: Boolean, required: true },
-  location: {
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true },
-  },
-  imageUrl: { type: String, required: false }, // رابط الصورة من Cloudinary
-});
-
-const Property = mongoose.model('Property', PropertySchema);
-
-// نقطة النهاية لاستقبال البيانات
 app.post('/addProperty', upload.array('images', 6), async (req, res) => {
   const {
     email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
@@ -400,7 +366,7 @@ app.post('/addProperty', upload.array('images', 6), async (req, res) => {
       lat: location.lat,
       lng: location.lng,
     },
-    imageUrls: uploadedImageUrls.length ? uploadedImageUrls : imageUrls,
+    imageUrls: uploadedImageUrls.length ? uploadedImageUrls : imageUrls, // نضيف روابط الصور المرفوعة
   });
 
   try {
