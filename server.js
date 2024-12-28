@@ -318,7 +318,7 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 
 // تعريف نموذج للعقار في قاعدة البيانات
 
-// نموذج (Schema) العقار
+// تعريف نموذج العقار
 const PropertySchema = new mongoose.Schema({
   email: { type: String, required: true },
   firstName: { type: String, required: true },
@@ -353,27 +353,30 @@ const Property = mongoose.model('Property', PropertySchema);
 // Endpoint لإضافة العقار
 app.post('/addProperty', upload.single('file'), async (req, res) => {
   try {
-    const { 
-      email, firstName, lastName, profileImage, ownerId, hostelName, roomType, 
-      internetAvailable, bathroomType, cleaningService, maintenanceService, 
-      securitySystem, emergencyMeasures, goodLighting, sharedAreas, 
-      studyRooms, laundryRoom, sharedKitchen, foodService, effectiveManagement, 
-      psychologicalSupport, location 
+    const {
+      email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
+      internetAvailable, bathroomType, cleaningService, maintenanceService,
+      securitySystem, emergencyMeasures, goodLighting, sharedAreas,
+      studyRooms, laundryRoom, sharedKitchen, foodService, effectiveManagement,
+      psychologicalSupport, location
     } = req.body;
 
-    // رفع الصورة إلى Cloudinary
     let imageUrl = null;
+
+    // التأكد من رفع الصورة
     if (req.file) {
-      const result = await cloudinary.uploader.upload_stream(
-        { resource_type: 'auto' },
-        (error, result) => {
-          if (error) {
-            return res.status(500).json({ message: 'Failed to upload image', error: error });
+      // رفع الصورة إلى Cloudinary باستخدام upload_stream
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          { resource_type: 'auto' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
           }
-          imageUrl = result.secure_url; // الحصول على رابط الصورة من Cloudinary
-        }
-      );
-      req.file.stream.pipe(result);
+        ).end(req.file.buffer); // إرسال الصورة عبر stream
+      });
+
+      imageUrl = result.secure_url; // الحصول على رابط الصورة من Cloudinary
     }
 
     // إنشاء عقار جديد
