@@ -316,17 +316,49 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 });
 
 
-// تعريف نموذج للعقار في قاعدة البيانات
+// تعريف نموذج Property داخل server.js
+const propertySchema = new mongoose.Schema({
+  email: String,
+  firstName: String,
+  lastName: String,
+  profileImage: String,
+  ownerId: String,
+  hostelName: String,
+  roomType: String,
+  internetAvailable: Boolean,
+  bathroomType: String,
+  cleaningService: Boolean,
+  maintenanceService: Boolean,
+  securitySystem: Boolean,
+  emergencyMeasures: Boolean,
+  goodLighting: Boolean,
+  sharedAreas: Boolean,
+  studyRooms: Boolean,
+  laundryRoom: Boolean,
+  sharedKitchen: Boolean,
+  foodService: Boolean,
+  effectiveManagement: Boolean,
+  psychologicalSupport: Boolean,
+  location: {
+    lat: Number,
+    lng: Number,
+  },
+  imageUrls: [String], // لتخزين روابط الصور
+});
+
+const Property = mongoose.model('Property', propertySchema);
+
+// معالج الطلب لإضافة عقار جديد
 app.post('/addProperty', upload.array('images', 6), async (req, res) => {
   const {
     email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
     internetAvailable, bathroomType, cleaningService, maintenanceService, 
     securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
     laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
-    location, imageUrls
+    location
   } = req.body;
 
-  // تحميل الصور إلى Cloudinary
+  // رفع الصور إلى Cloudinary
   let uploadedImageUrls = [];
   if (req.files) {
     for (const file of req.files) {
@@ -334,12 +366,12 @@ app.post('/addProperty', upload.array('images', 6), async (req, res) => {
         const imageUrl = await uploadImageToCloudinary(file);
         uploadedImageUrls.push(imageUrl);
       } catch (error) {
-        return res.status(500).send('Error uploading image to Cloudinary');
+        return res.status(500).send('خطأ في رفع الصورة إلى Cloudinary');
       }
     }
   }
 
-  // إنشاء سجل جديد في قاعدة البيانات
+  // إنشاء إدخال جديد للعقار في قاعدة البيانات
   const newProperty = new Property({
     email,
     firstName,
@@ -348,36 +380,44 @@ app.post('/addProperty', upload.array('images', 6), async (req, res) => {
     ownerId,
     hostelName,
     roomType,
-    internetAvailable: internetAvailable === 'true',
+    internetAvailable,
     bathroomType,
-    cleaningService: cleaningService === 'true',
-    maintenanceService: maintenanceService === 'true',
-    securitySystem: securitySystem === 'true',
-    emergencyMeasures: emergencyMeasures === 'true',
-    goodLighting: goodLighting === 'true',
-    sharedAreas: sharedAreas === 'true',
-    studyRooms: studyRooms === 'true',
-    laundryRoom: laundryRoom === 'true',
-    sharedKitchen: sharedKitchen === 'true',
-    foodService: foodService === 'true',
-    effectiveManagement: effectiveManagement === 'true',
-    psychologicalSupport: psychologicalSupport === 'true',
-    location: {
-      lat: location.lat,
-      lng: location.lng,
-    },
-    imageUrls: uploadedImageUrls.length ? uploadedImageUrls : imageUrls, // نضيف روابط الصور المرفوعة
+    cleaningService,
+    maintenanceService,
+    securitySystem,
+    emergencyMeasures,
+    goodLighting,
+    sharedAreas,
+    studyRooms,
+    laundryRoom,
+    sharedKitchen,
+    foodService,
+    effectiveManagement,
+    psychologicalSupport,
+    location,
+    imageUrls: uploadedImageUrls,  // إضافة روابط الصور المرفوعة
   });
 
   try {
-    // حفظ البيانات في قاعدة البيانات
-    await newProperty.save();
-    res.status(201).send({ message: 'Property added successfully!' });
+    await newProperty.save();  // حفظ العقار في قاعدة البيانات
+    res.status(200).send('تم إضافة العقار بنجاح');
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Error saving property');
+    res.status(500).send('حدث خطأ أثناء إضافة العقار');
   }
 });
+
+// دالة لرفع الصورة إلى Cloudinary
+async function uploadImageToCloudinary(file) {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream({ resource_type: 'auto' }, (error, result) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result.secure_url);
+      }
+    }).end(file.buffer);
+  });
+}
 
 // جلب جميع العقارات
 app.get('/getAllProperties', async (req, res) => {
