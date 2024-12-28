@@ -439,11 +439,6 @@ app.post('/addProperty', upload.array('propertyImages', 6), async (req, res) => 
   }
 });
 
-// تشغيل الخادم على المنفذ المحدد
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
-
 // جلب جميع العقارات
 app.get('/getAllProperties', async (req, res) => {
   try {
