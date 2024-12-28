@@ -316,70 +316,105 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
 });
 
 
-// نموذج العقار
-const propertySchema = {
-  email: String,
-  firstName: String,
-  lastName: String,
-  profileImage: String,
-  ownerId: String,
-  type: String,
-  price: String,
-  size: String,
-  rooms: Number,
-  baths: Number,
+// تعريف نموذج للعقار في قاعدة البيانات
+
+// تعريف نموذج العقار
+const PropertySchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  profileImage: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  hostelName: { type: String, required: true },
+  roomType: { type: String, required: true },
+  internetAvailable: { type: Boolean, required: true },
+  bathroomType: { type: String, required: true },
+  cleaningService: { type: Boolean, required: true },
+  maintenanceService: { type: Boolean, required: true },
+  securitySystem: { type: Boolean, required: true },
+  emergencyMeasures: { type: Boolean, required: true },
+  goodLighting: { type: Boolean, required: true },
+  sharedAreas: { type: Boolean, required: true },
+  studyRooms: { type: Boolean, required: true },
+  laundryRoom: { type: Boolean, required: true },
+  sharedKitchen: { type: Boolean, required: true },
+  foodService: { type: Boolean, required: true },
+  effectiveManagement: { type: Boolean, required: true },
+  psychologicalSupport: { type: Boolean, required: true },
   location: {
-    lat: Number,
-    lng: Number,
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
   },
-  imageUrl: String,
-};
+  imageUrl: { type: String, required: true }, // رابط الصورة من Cloudinary
+});
 
-// إضافة عقار
-app.post('/add-property', upload.single('propertyImage'), async (req, res) => {
+const Property = mongoose.model('Property', PropertySchema);
+
+// Endpoint لإضافة العقار
+app.post('/addProperty', upload.single('file'), async (req, res) => {
   try {
-    const { ownerId, type, price, size, rooms, baths, locationLat, locationLng } = req.body;
+    const {
+      email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
+      internetAvailable, bathroomType, cleaningService, maintenanceService,
+      securitySystem, emergencyMeasures, goodLighting, sharedAreas,
+      studyRooms, laundryRoom, sharedKitchen, foodService, effectiveManagement,
+      psychologicalSupport, location
+    } = req.body;
 
-    if (!ownerId || !type || !price || !size || !rooms || !baths || !locationLat || !locationLng) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'All fields are required to add a property.',
-      });
-    }
+    let imageUrl = "";
 
-    const propertyRef = db.collection('properties').doc();
-
-    let propertyImageUrl = '';
+    // التأكد من رفع الصورة
     if (req.file) {
-      // إذا تم رفع صورة العقار، نقوم بحفظها محليًا
-      propertyImageUrl = '/uploads/' + req.file.filename;
+      // رفع الصورة إلى Cloudinary باستخدام upload_stream
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          { resource_type: 'auto' },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        ).end(req.file.buffer); // إرسال الصورة عبر stream
+      });
+
+      imageUrl = result.secure_url; // الحصول على رابط الصورة من Cloudinary
     }
 
-    // إضافة العقار إلى Firestore
-    await propertyRef.set({
+    // إنشاء عقار جديد
+    const newProperty = new Property({
+      email,
+      firstName,
+      lastName,
+      profileImage,
       ownerId,
-      type,
-      price,
-      size,
-      rooms,
-      baths,
+      hostelName,
+      roomType,
+      internetAvailable: internetAvailable === 'true', // تحويل النص إلى قيمة بوليانية
+      bathroomType,
+      cleaningService: cleaningService === 'true',
+      maintenanceService: maintenanceService === 'true',
+      securitySystem: securitySystem === 'true',
+      emergencyMeasures: emergencyMeasures === 'true',
+      goodLighting: goodLighting === 'true',
+      sharedAreas: sharedAreas === 'true',
+      studyRooms: studyRooms === 'true',
+      laundryRoom: laundryRoom === 'true',
+      sharedKitchen: sharedKitchen === 'true',
+      foodService: foodService === 'true',
+      effectiveManagement: effectiveManagement === 'true',
+      psychologicalSupport: psychologicalSupport === 'true',
       location: {
-        lat: locationLat,
-        lng: locationLng,
+        lat: location.lat,
+        lng: location.lng,
       },
-      imageUrl: propertyImageUrl,
+      imageUrl: imageUrl || null, // إذا تم رفع صورة من Cloudinary
     });
 
-    res.status(201).json({
-      status: 'success',
-      message: 'Property added successfully!',
-    });
+    // حفظ العقار في قاعدة البيانات
+    await newProperty.save();
+    res.status(201).json({ message: 'Property added successfully' });
   } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'An error occurred while adding the property.',
-      error: error.message,
-    });
+    console.log(error);
+    res.status(500).json({ message: 'Error occurred while adding property' });
   }
 });
 
