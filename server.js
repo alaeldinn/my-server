@@ -361,7 +361,7 @@ app.post('/addProperty', upload.single('file'), async (req, res) => {
       psychologicalSupport, location
     } = req.body;
 
-    
+    let imageUrl = "";
 
     // التأكد من رفع الصورة
     if (req.file) {
