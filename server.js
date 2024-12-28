@@ -325,7 +325,7 @@ const PropertySchema = new mongoose.Schema({
   lastName: { type: String, required: true },
   profileImage: { type: String, required: true },
   ownerId: { type: String, required: true },
-  hostelName: { type: String, required: true },
+  hostelName: { type: String, required: true, default: "اسم غير محدد" },  // إضافة قيمة افتراضية
   roomType: { type: String, required: true },
   internetAvailable: { type: Boolean, required: true },
   bathroomType: { type: String, required: true },
@@ -405,7 +405,7 @@ if (req.file) {
       lastName,
       profileImage,
       ownerId,
-      hostelName,
+      hostelName: hostelName || "اسم غير محدد",  // تعيين قيمة افتراضية إذا كانت فارغة أو null
       roomType,
       internetAvailable: internetAvailable === 'true', // تحويل النص إلى قيمة بوليانية
       bathroomType,
