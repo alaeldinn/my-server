@@ -417,7 +417,7 @@ const PropertySchema = new mongoose.Schema({
 const Property = mongoose.model('Property', PropertySchema);
 
 // نقطة النهاية لاستقبال البيانات
-app.post('/addProperty', uploadproperty.array('files', 6), async (req, res) => {
+app.post('/addProperty', async (req, res) => {
   console.log('Received request body:', req.body);
   console.log('Received files:', req.files);
   try { const {
@@ -425,28 +425,12 @@ app.post('/addProperty', uploadproperty.array('files', 6), async (req, res) => {
     internetAvailable, bathroomType, cleaningService, maintenanceService, 
     securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
     laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
-    location } = req.body;
+    location ,imageUrls } = req.body;
 
- // رفع الصور إلى Cloudinary
-    const uploadedImageUrls = [];
-    for (let i = 0; i < req.files.length; i++) {
-      const file = req.files[i];
-      
-      // رفع الصورة إلى Cloudinary
-      const result = await cloudinary.uploadproperty.upload_stream(
-        { resource_type: 'auto' },
-        (error, result) => {
-          if (error) {
-            console.error(error);
-            return res.status(500).json({ error: 'Error uploading image' });
-          }
-          uploadedImageUrls.push(result.secure_url);
-        }
-      );
-
-      // تحويل الصورة من الذاكرة إلى Cloudinary
-      file.stream.pipe(result);
-    }
+  // تحقق من وجود روابط الصور (imageUrls)
+  if (!imageUrls || imageUrls.length === 0) {
+    return res.status(400).json({ error: 'No images provided' });
+  }
 
     const newProperty = new Property({
       email,
@@ -474,7 +458,7 @@ app.post('/addProperty', uploadproperty.array('files', 6), async (req, res) => {
         lat: location.lat,
         lng: location.lng
       },
-      imageUrls: uploadedImageUrls
+      imageUrls: imageUrls 
     });
     const savedProperty = await newProperty.save();
 
@@ -486,18 +470,6 @@ app.post('/addProperty', uploadproperty.array('files', 6), async (req, res) => {
     res.status(500).json({ error: 'Failed to add property' });
   }
 });
-
-// جلب جميع العقارات
-app.get('/getAllProperties', async (req, res) => {
-  try {
-    const properties = await Property.find();
-    res.json({ properties });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
