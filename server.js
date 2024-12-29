@@ -332,7 +332,7 @@ const PropertySchema = new mongoose.Schema({
   lastName: { type: String, required: true },
   profileImage: { type: String, required: true },
   ownerId: { type: String, required: true },
-   hostelName: {
+  hostelName: {
     type: String,
     required: true
   },
@@ -408,29 +408,34 @@ const PropertySchema = new mongoose.Schema({
       required: true
     }
   },
-  imageUrls: [{
-    type: String
-  }]
+  imageUrl1: { type: String },
+  imageUrl2: { type: String },
+  imageUrl3: { type: String },
+  imageUrl4: { type: String },
+  imageUrl5: { type: String },
+  imageUrl6: { type: String }
 }, { timestamps: true });
 
-
 const Property = mongoose.model('Property', PropertySchema);
+
 
 // نقطة النهاية لاستقبال البيانات
 app.post('/addProperty', async (req, res) => {
   console.log('Received request body:', req.body);
-  console.log('Received files:', req.files);
-  try { const {
-    email, firstName, lastName, profileImage, id: ownerId, hostelName, roomType,
-    internetAvailable, bathroomType, cleaningService, maintenanceService, 
-    securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
-    laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
-    location ,imageUrls } = req.body;
 
-  // تحقق من وجود روابط الصور (imageUrls)
-  if (!imageUrls || imageUrls.length === 0) {
-    return res.status(400).json({ error: 'No images provided' });
-  }
+  try {
+    const {
+      email, firstName, lastName, profileImage, id: ownerId, hostelName, roomType,
+      internetAvailable, bathroomType, cleaningService, maintenanceService, 
+      securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
+      laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
+      location, imageUrl1, imageUrl2, imageUrl3, imageUrl4, imageUrl5, imageUrl6
+    } = req.body;
+
+    // تحقق من وجود روابط الصور
+    if (!imageUrl1 && !imageUrl2 && !imageUrl3 && !imageUrl4 && !imageUrl5 && !imageUrl6) {
+      return res.status(400).json({ error: 'No images provided' });
+    }
 
     const newProperty = new Property({
       email,
@@ -454,12 +459,18 @@ app.post('/addProperty', async (req, res) => {
       foodService,
       effectiveManagement,
       psychologicalSupport,
-      location:{
+      location: {
         lat: location.lat,
         lng: location.lng
       },
-      imageUrls: imageUrls 
+      imageUrl1,
+      imageUrl2,
+      imageUrl3,
+      imageUrl4,
+      imageUrl5,
+      imageUrl6
     });
+
     const savedProperty = await newProperty.save();
 
     // إرسال استجابة ناجحة
@@ -470,6 +481,7 @@ app.post('/addProperty', async (req, res) => {
     res.status(500).json({ error: 'Failed to add property' });
   }
 });
+
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
