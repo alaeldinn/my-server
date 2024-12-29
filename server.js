@@ -418,7 +418,7 @@ const PropertySchema = new mongoose.Schema({
 
 const Property = mongoose.model('Property', PropertySchema);
 
-
+console.log('Received request body:', req.body);
 // نقطة النهاية لاستقبال البيانات
 app.post('/addProperty', async (req, res) => {
   console.log('Received request body:', req.body);
