@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const bodyParser = require('body-parser');
-require('dotenv').config();
+
 
 const { Decimal128 } = require('mongodb');
 const app = express();
