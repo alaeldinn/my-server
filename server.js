@@ -6,9 +6,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
+const bodyParser = require('body-parser');
+require('dotenv').config();
+
 const { Decimal128 } = require('mongodb');
 const app = express();
-const port = 3001;
+const port = 2025;
 
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
 app.use(cors());
@@ -22,6 +25,8 @@ mongoose.connect('mongodb+srv://ahmed:jFRDH2EgcI8AD9m4@cluster0.gcasm.mongodb.ne
   .then(() => console.log('Connected to MongoDB'))
   .catch((error) => console.log('Error connecting to MongoDB: ', error));
 
+app.use(bodyParser.json());
+
 // إعداد Cloudinary
 cloudinary.config({
   cloud_name: 'dpdgpxrl2',   
@@ -32,6 +37,8 @@ cloudinary.config({
 // إعداد تخزين الصور باستخدام multer (للتعامل مع الصورة محليًا)
 const storage = multer.memoryStorage(); // لتخزين الصورة في الذاكرة مباشرة
 const upload = multer({ storage: multer.memoryStorage() }); // تحديد التخزين في الذاكرة
+const uploadproperty = multer({ storage: storage });  // تحديد التخزين في الذاكرة
+
 
 // نموذج المستخدم
 const userSchema = new mongoose.Schema({
@@ -325,91 +332,158 @@ const PropertySchema = new mongoose.Schema({
   lastName: { type: String, required: true },
   profileImage: { type: String, required: true },
   ownerId: { type: String, required: true },
-  hostelName: { type: String, required: true, default: "اسم غير محدد" },  // إضافة قيمة افتراضية
-  roomType: { type: String, required: true },
-  internetAvailable: { type: Boolean, required: true },
-  bathroomType: { type: String, required: true },
-  cleaningService: { type: Boolean, required: true },
-  maintenanceService: { type: Boolean, required: true },
-  securitySystem: { type: Boolean, required: true },
-  emergencyMeasures: { type: Boolean, required: true },
-  goodLighting: { type: Boolean, required: true },
-  sharedAreas: { type: Boolean, required: true },
-  studyRooms: { type: Boolean, required: true },
-  laundryRoom: { type: Boolean, required: true },
-  sharedKitchen: { type: Boolean, required: true },
-  foodService: { type: Boolean, required: true },
-  effectiveManagement: { type: Boolean, required: true },
-  psychologicalSupport: { type: Boolean, required: true },
-  location: {
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true },
+   hostelName: {
+    type: String,
+    required: true
   },
-  imageUrl: { type: String, required: false }, // رابط الصورة من Cloudinary
-});
+  roomType: {
+    type: String,
+    enum: ['Single', 'Shared'],
+    required: true
+  },
+  internetAvailable: {
+    type: Boolean,
+    default: false
+  },
+  bathroomType: {
+    type: String,
+    enum: ['Private', 'Shared'],
+    required: true
+  },
+  cleaningService: {
+    type: Boolean,
+    default: false
+  },
+  maintenanceService: {
+    type: Boolean,
+    default: false
+  },
+  securitySystem: {
+    type: Boolean,
+    default: false
+  },
+  emergencyMeasures: {
+    type: Boolean,
+    default: false
+  },
+  goodLighting: {
+    type: Boolean,
+    default: false
+  },
+  sharedAreas: {
+    type: Boolean,
+    default: false
+  },
+  studyRooms: {
+    type: Boolean,
+    default: false
+  },
+  laundryRoom: {
+    type: Boolean,
+    default: false
+  },
+  sharedKitchen: {
+    type: Boolean,
+    default: false
+  },
+  foodService: {
+    type: Boolean,
+    default: false
+  },
+  effectiveManagement: {
+    type: Boolean,
+    default: false
+  },
+  psychologicalSupport: {
+    type: Boolean,
+    default: false
+  },
+  location: {
+    lat: {
+      type: Number,
+      required: true
+    },
+    lng: {
+      type: Number,
+      required: true
+    }
+  },
+  imageUrls: [{
+    type: String
+  }]
+}, { timestamps: true });
+
 
 const Property = mongoose.model('Property', PropertySchema);
 
 // نقطة النهاية لاستقبال البيانات
-app.post('/addProperty', upload.array('images', 6), async (req, res) => {
-  const {
+app.post('/addProperty', uploadproperty.array('files', 6), async (req, res) => {
+  console.log('Received request body:', req.body);
+  console.log('Received files:', req.files);
+  try { const {
     email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
     internetAvailable, bathroomType, cleaningService, maintenanceService, 
     securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
     laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
-    location, imageUrls
-  } = req.body;
+    location } = req.body;
 
-  // تحميل الصور إلى Cloudinary
-  let uploadedImageUrls = [];
-  if (req.files) {
-    for (const file of req.files) {
-      try {
-        const imageUrl = await uploadImageToCloudinary(file);
-        uploadedImageUrls.push(imageUrl);
-      } catch (error) {
-        return res.status(500).send('Error uploading image to Cloudinary');
-      }
+ // رفع الصور إلى Cloudinary
+    const uploadedImageUrls = [];
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      
+      // رفع الصورة إلى Cloudinary
+      const result = await cloudinary.uploadproperty.upload_stream(
+        { resource_type: 'auto' },
+        (error, result) => {
+          if (error) {
+            console.error(error);
+            return res.status(500).json({ error: 'Error uploading image' });
+          }
+          uploadedImageUrls.push(result.secure_url);
+        }
+      );
+
+      // تحويل الصورة من الذاكرة إلى Cloudinary
+      file.stream.pipe(result);
     }
-  }
 
-  // إنشاء سجل جديد في قاعدة البيانات
-  const newProperty = new Property({
-    email,
-    firstName,
-    lastName,
-    profileImage,
-    ownerId,
-    hostelName,
-    roomType,
-    internetAvailable: internetAvailable === 'true',
-    bathroomType,
-    cleaningService: cleaningService === 'true',
-    maintenanceService: maintenanceService === 'true',
-    securitySystem: securitySystem === 'true',
-    emergencyMeasures: emergencyMeasures === 'true',
-    goodLighting: goodLighting === 'true',
-    sharedAreas: sharedAreas === 'true',
-    studyRooms: studyRooms === 'true',
-    laundryRoom: laundryRoom === 'true',
-    sharedKitchen: sharedKitchen === 'true',
-    foodService: foodService === 'true',
-    effectiveManagement: effectiveManagement === 'true',
-    psychologicalSupport: psychologicalSupport === 'true',
-    location: {
-      lat: location.lat,
-      lng: location.lng,
-    },
-    imageUrls: uploadedImageUrls.length ? uploadedImageUrls : imageUrls,
-  });
+    const newProperty = new Property({
+      email,
+      firstName,
+      lastName,
+      profileImage,
+      ownerId,
+      hostelName,
+      roomType,
+      internetAvailable,
+      bathroomType,
+      cleaningService,
+      maintenanceService,
+      securitySystem,
+      emergencyMeasures,
+      goodLighting,
+      sharedAreas,
+      studyRooms,
+      laundryRoom,
+      sharedKitchen,
+      foodService,
+      effectiveManagement,
+      psychologicalSupport,
+      location:{
+        lat: location.lat,
+        lng: location.lng
+      },
+      imageUrls: uploadedImageUrls
+    });
+    const savedProperty = await newProperty.save();
 
-  try {
-    // حفظ البيانات في قاعدة البيانات
-    await newProperty.save();
-    res.status(201).send({ message: 'Property added successfully!' });
+    // إرسال استجابة ناجحة
+    res.status(201).json({ message: 'Property added successfully', property: savedProperty });
+
   } catch (error) {
     console.error(error);
-    res.status(500).send('Error saving property');
+    res.status(500).json({ error: 'Failed to add property' });
   }
 });
 
@@ -423,22 +497,6 @@ app.get('/getAllProperties', async (req, res) => {
   }
 });
 
-// فلترة العقارات
-app.post('/filterProperties', async (req, res) => {
-  const { type, price, rooms } = req.body;
-  
-  let query = {};
-  if (type) query.type = type;
-  if (price) query.price = price;
-  if (rooms) query.rooms = rooms;
-
-  try {
-    const filteredProperties = await Property.find(query);
-    res.json({ properties: filteredProperties });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
 
 
 // تشغيل الخادم على المنفذ المحدد
