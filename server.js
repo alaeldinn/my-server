@@ -421,7 +421,7 @@ app.post('/addProperty', async (req, res) => {
   console.log('Received request body:', req.body);
   console.log('Received files:', req.files);
   try { const {
-    email, firstName, lastName, profileImage, ownerId, hostelName, roomType,
+    email, firstName, lastName, profileImage, id: ownerId, hostelName, roomType,
     internetAvailable, bathroomType, cleaningService, maintenanceService, 
     securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
     laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
