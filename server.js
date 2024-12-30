@@ -438,7 +438,7 @@ app.get('/getAllProperties', async (req, res) => {
       price: property.price || 'N/A', // إذا كان السعر غير موجود، يتم تعيينه إلى 'N/A'
       size: property.size || 'N/A', // إذا كان الحجم غير موجود، يتم تعيينه إلى 'N/A'
       rooms: property.rooms || 0, // إذا كان عدد الغرف غير موجود، يتم تعيينه إلى 0
-      imageUrl: property.imageUrls[0] || '', // استخدام أول صورة كصورة رئيسية
+      imageUrls: property.imageUrls || [], // استخدام أول صورة كصورة رئيسية
       location: {
         lat: property.location.lat,
         lng: property.location.lng,
