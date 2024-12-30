@@ -425,6 +425,50 @@ app.post('/addProperty', async (req, res) => {
   }
 });
 
+// نقطة النهاية لاسترجاع جميع العقارات
+app.get('/getAllProperties', async (req, res) => {
+  try {
+    // جلب جميع العقارات من قاعدة البيانات
+    const properties = await Property.find({});
+
+    // تحويل البيانات إلى التنسيق المطلوب
+    const formattedProperties = properties.map(property => ({
+      _id: property._id,
+      type: property.hostelName, // يمكن تعديل هذا الحقل حسب احتياجاتك
+      price: property.price || 'N/A', // إذا كان السعر غير موجود، يتم تعيينه إلى 'N/A'
+      size: property.size || 'N/A', // إذا كان الحجم غير موجود، يتم تعيينه إلى 'N/A'
+      rooms: property.rooms || 0, // إذا كان عدد الغرف غير موجود، يتم تعيينه إلى 0
+      imageUrl: property.imageUrls[0] || '', // استخدام أول صورة كصورة رئيسية
+      location: {
+        lat: property.location.lat,
+        lng: property.location.lng,
+      },
+      ownerId: property.ownerId,
+      profileImage: property.profileImage,
+      bathroomType: property.bathroomType,
+      internetAvailable: property.internetAvailable,
+      cleaningService: property.cleaningService,
+      maintenanceService: property.maintenanceService,
+      securitySystem: property.securitySystem,
+      emergencyMeasures: property.emergencyMeasures,
+      goodLighting: property.goodLighting,
+      sharedAreas: property.sharedAreas,
+      studyRooms: property.studyRooms,
+      laundryRoom: property.laundryRoom,
+      sharedKitchen: property.sharedKitchen,
+      foodService: property.foodService,
+      effectiveManagement: property.effectiveManagement,
+      psychologicalSupport: property.psychologicalSupport,
+    }));
+
+    // إرسال الاستجابة
+    res.status(200).json({ properties: formattedProperties });
+  } catch (error) {
+    console.error('Error fetching properties:', error);
+    res.status(500).json({ error: 'Failed to fetch properties' });
+  }
+});
+
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
