@@ -460,7 +460,7 @@ app.get('/getAllProperties', async (req, res) => {
       effectiveManagement: property.effectiveManagement,
       psychologicalSupport: property.psychologicalSupport,
     }));
-
+    console.log('Response Data:', { properties: formattedProperties });
     // إرسال الاستجابة
     res.status(200).json({ properties: formattedProperties });
   } catch (error) {
