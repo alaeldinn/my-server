@@ -6,12 +6,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
-const bodyParser = require('body-parser');
-
-
 const { Decimal128 } = require('mongodb');
 const app = express();
-const port = 2025;
+const port = 3001;
 
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
 app.use(cors());
@@ -25,20 +22,16 @@ mongoose.connect('mongodb+srv://ahmed:jFRDH2EgcI8AD9m4@cluster0.gcasm.mongodb.ne
   .then(() => console.log('Connected to MongoDB'))
   .catch((error) => console.log('Error connecting to MongoDB: ', error));
 
-app.use(bodyParser.json());
-
 // إعداد Cloudinary
 cloudinary.config({
-  cloud_name: 'dpdgpxrl2',   
-  api_key: '989476428679847',         
-  api_secret: '0zFd46XHJXcGq_vZoFmutPmbrJ0'    
+  cloud_name: 'dpdgpxrl2',
+  api_key: '989476428679847',
+  api_secret: '0zFd46XHJXcGq_vZoFmutPmbrJ0'
 });
 
 // إعداد تخزين الصور باستخدام multer (للتعامل مع الصورة محليًا)
 const storage = multer.memoryStorage(); // لتخزين الصورة في الذاكرة مباشرة
 const upload = multer({ storage: multer.memoryStorage() }); // تحديد التخزين في الذاكرة
-const uploadproperty = multer({ storage: storage });  // تحديد التخزين في الذاكرة
-
 
 // نموذج المستخدم
 const userSchema = new mongoose.Schema({
@@ -48,8 +41,8 @@ const userSchema = new mongoose.Schema({
   password: String,
   profileImage: String, 
   accountType: { type: String, enum: ['Student', 'University'] },
-  studentId: String,      
-  major: String,         
+  studentId: String,
+  major: String,
   universityName: String,  
   universityCode: String,  
   universityAddress: String,
@@ -57,6 +50,38 @@ const userSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
+
+// تعريف نموذج العقار
+const PropertySchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  profileImage: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  hostelName: { type: String, required: true },
+  roomType: { type: String, enum: ['Single', 'Shared'], required: true },
+  internetAvailable: { type: Boolean, default: false },
+  bathroomType: { type: String, enum: ['Private', 'Shared'], required: true },
+  cleaningService: { type: Boolean, default: false },
+  maintenanceService: { type: Boolean, default: false },
+  securitySystem: { type: Boolean, default: false },
+  emergencyMeasures: { type: Boolean, default: false },
+  goodLighting: { type: Boolean, default: false },
+  sharedAreas: { type: Boolean, default: false },
+  studyRooms: { type: Boolean, default: false },
+  laundryRoom: { type: Boolean, default: false },
+  sharedKitchen: { type: Boolean, default: false },
+  foodService: { type: Boolean, default: false },
+  effectiveManagement: { type: Boolean, default: false },
+  psychologicalSupport: { type: Boolean, default: false },
+  location: {
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+  },
+  imageUrls: [{ type: String }],
+}, { timestamps: true });
+
+const Property = mongoose.model('Property', PropertySchema);
 
 // **إنشاء حساب جديد**
 app.post('/register', upload.single('profileImage'), async (req, res) => {
@@ -126,7 +151,6 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     });
   }
 });
-
 
 // **تسجيل الدخول**
 app.post('/login', async (req, res) => {
@@ -202,6 +226,8 @@ app.post('/login', async (req, res) => {
     });
   }
 });
+
+// **تحديث الملف الشخصي**
 app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
   try {
     console.log('Received request to update profile:', req.body); // تتبع البيانات القادمة من العميل
@@ -322,121 +348,43 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
   }
 });
 
-
-// تعريف نموذج للعقار في قاعدة البيانات
-
-// تعريف نموذج العقار
-const PropertySchema = new mongoose.Schema({
-  email: { type: String, required: true },
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  profileImage: { type: String, required: true },
-  ownerId: { type: String, required: true },
-  hostelName: {
-    type: String,
-    required: true
-  },
-  roomType: {
-    type: String,
-    enum: ['Single', 'Shared'],
-    required: true
-  },
-  internetAvailable: {
-    type: Boolean,
-    default: false
-  },
-  bathroomType: {
-    type: String,
-    enum: ['Private', 'Shared'],
-    required: true
-  },
-  cleaningService: {
-    type: Boolean,
-    default: false
-  },
-  maintenanceService: {
-    type: Boolean,
-    default: false
-  },
-  securitySystem: {
-    type: Boolean,
-    default: false
-  },
-  emergencyMeasures: {
-    type: Boolean,
-    default: false
-  },
-  goodLighting: {
-    type: Boolean,
-    default: false
-  },
-  sharedAreas: {
-    type: Boolean,
-    default: false
-  },
-  studyRooms: {
-    type: Boolean,
-    default: false
-  },
-  laundryRoom: {
-    type: Boolean,
-    default: false
-  },
-  sharedKitchen: {
-    type: Boolean,
-    default: false
-  },
-  foodService: {
-    type: Boolean,
-    default: false
-  },
-  effectiveManagement: {
-    type: Boolean,
-    default: false
-  },
-  psychologicalSupport: {
-    type: Boolean,
-    default: false
-  },
-  location: {
-    lat: {
-      type: Number,
-      required: true
-    },
-    lng: {
-      type: Number,
-      required: true
-    }
-  },
-  imageUrl1: { type: String },
-  imageUrl2: { type: String },
-  imageUrl3: { type: String },
-  imageUrl4: { type: String },
-  imageUrl5: { type: String },
-  imageUrl6: { type: String }
-}, { timestamps: true });
-
-const Property = mongoose.model('Property', PropertySchema);
-
-console.log('Received request body:', req.body);
 // نقطة النهاية لاستقبال البيانات
 app.post('/addProperty', async (req, res) => {
   console.log('Received request body:', req.body);
 
   try {
     const {
-      email, firstName, lastName, profileImage, id: ownerId, hostelName, roomType,
-      internetAvailable, bathroomType, cleaningService, maintenanceService, 
-      securitySystem, emergencyMeasures, goodLighting, sharedAreas, studyRooms, 
-      laundryRoom, sharedKitchen, foodService, effectiveManagement, psychologicalSupport,
-      location, imageUrl1, imageUrl2, imageUrl3, imageUrl4, imageUrl5, imageUrl6
+      email,
+      firstName,
+      lastName,
+      profileImage,
+      id: ownerId,
+      hostelName,
+      roomType,
+      internetAvailable,
+      bathroomType,
+      cleaningService,
+      maintenanceService,
+      securitySystem,
+      emergencyMeasures,
+      goodLighting,
+      sharedAreas,
+      studyRooms,
+      laundryRoom,
+      sharedKitchen,
+      foodService,
+      effectiveManagement,
+      psychologicalSupport,
+      location,
+      imageUrls,
     } = req.body;
 
-    // تحقق من وجود روابط الصور
-    if (!imageUrl1 && !imageUrl2 && !imageUrl3 && !imageUrl4 && !imageUrl5 && !imageUrl6) {
+    // التحقق من وجود روابط الصور (imageUrls)
+    if (!imageUrls || imageUrls.length === 0) {
       return res.status(400).json({ error: 'No images provided' });
     }
 
+    // إنشاء عقار جديد
     const newProperty = new Property({
       email,
       firstName,
@@ -461,27 +409,21 @@ app.post('/addProperty', async (req, res) => {
       psychologicalSupport,
       location: {
         lat: location.lat,
-        lng: location.lng
+        lng: location.lng,
       },
-      imageUrl1,
-      imageUrl2,
-      imageUrl3,
-      imageUrl4,
-      imageUrl5,
-      imageUrl6
+      imageUrls: imageUrls,
     });
 
+    // حفظ العقار في قاعدة البيانات
     const savedProperty = await newProperty.save();
 
     // إرسال استجابة ناجحة
     res.status(201).json({ message: 'Property added successfully', property: savedProperty });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to add property' });
   }
 });
-
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
