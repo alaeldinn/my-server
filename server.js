@@ -6,7 +6,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
-const nodemailer = require('nodemailer');
 const { Decimal128 } = require('mongodb');
 const app = express();
 const port = 3001;
@@ -40,15 +39,14 @@ const userSchema = new mongoose.Schema({
   lastName: String,
   email: { type: String, unique: true },
   password: String,
-  profileImage: String,
+  profileImage: String, 
   accountType: { type: String, enum: ['Student', 'University'] },
   studentId: String,
   major: String,
-  universityName: String,
-  universityCode: String,
+  universityName: String,  
+  universityCode: String,  
   universityAddress: String,
-  studentCount: Number,
-  otp: String, // إضافة حقل OTP
+  studentCount: Number,   
 });
 
 const User = mongoose.model('User', userSchema);
@@ -84,55 +82,6 @@ const PropertySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Property = mongoose.model('Property', PropertySchema);
-
-// إعداد Nodemailer لإرسال البريد الإلكتروني
-const transporter = nodemailer.createTransport({
-  service: 'gmail', // يمكنك استخدام خدمات أخرى مثل Outlook أو Yahoo
-  auth: {
-    user: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
-    pass: 'ENG:network@882001', // كلمة مرور البريد الإلكتروني
-  },
-});
-
-// دالة لإرسال البريد الإلكتروني
-const sendEmail = async (to, subject, text) => {
-  try {
-    const mailOptions = {
-      from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل
-      to, // البريد الإلكتروني المستقبل
-      subject, // عنوان البريد الإلكتروني
-      text, // محتوى البريد الإلكتروني
-    };
-
-    await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully');
-  } catch (error) {
-    console.error('Error sending email:', error);
-    throw error;
-  }
-};
-
-// دالة لحفظ رمز OTP
-const saveOTP = async (email, otp) => {
-  try {
-    await User.findOneAndUpdate({ email }, { otp }, { upsert: true });
-    console.log('OTP saved successfully');
-  } catch (error) {
-    console.error('Error saving OTP:', error);
-    throw error;
-  }
-};
-
-// دالة لاسترجاع رمز OTP
-const getOTP = async (email) => {
-  try {
-    const user = await User.findOne({ email });
-    return user ? user.otp : null;
-  } catch (error) {
-    console.error('Error retrieving OTP:', error);
-    throw error;
-  }
-};
 
 // **إنشاء حساب جديد**
 app.post('/register', upload.single('profileImage'), async (req, res) => {
@@ -172,8 +121,8 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
       lastName,
       email,
       password: hashedPassword,
-      profileImage: profileImageUrl,
-      accountType,
+      profileImage: profileImageUrl, 
+      accountType, 
       studentId: accountType === 'Student' ? studentId : undefined,
       major: accountType === 'Student' ? major : undefined,
       universityName: accountType === 'University' ? universityName : undefined,
@@ -521,8 +470,25 @@ app.get('/getAllProperties', async (req, res) => {
   }
 });
 
-
-
+app.post('/send-otp', async (req, res) => {
+  const { email } = req.body;
+  const otp = Math.floor(100000 + Math.random() * 900000); // إنشاء رمز OTP عشوائي
+  // هنا يمكنك استخدام خدمة مثل Nodemailer لإرسال البريد الإلكتروني
+  await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
+  // حفظ رمز OTP في قاعدة البيانات (مؤقتًا)
+  await saveOTP(email, otp);
+  res.status(200).json({ message: 'OTP sent successfully' });
+});
+app.post('/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+  // استرجاع رمز OTP المحفوظ في قاعدة البيانات
+  const savedOTP = await getOTP(email);
+  if (savedOTP === otp) {
+    res.status(200).json({ message: 'OTP verified successfully' });
+  } else {
+    res.status(400).json({ message: 'Invalid OTP' });
+  }
+});
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
