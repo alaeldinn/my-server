@@ -7,8 +7,12 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const { Decimal128 } = require('mongodb');
+const sgMail = require('@sendgrid/mail');
 const app = express();
 const port = 3001;
+
+// إعداد SendGrid
+sgMail.setApiKey('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');
 
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
 app.use(cors());
@@ -49,7 +53,15 @@ const userSchema = new mongoose.Schema({
   studentCount: Number,   
 });
 
+// نموذج OTP
+const otpSchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  otp: { type: String, required: true },
+  expiresAt: { type: Date, default: Date.now, expires: 300 }, // ينتهي بعد 5 دقائق
+});
+
 const User = mongoose.model('User', userSchema);
+const OTP = mongoose.model('OTP', otpSchema);
 
 // تعريف نموذج العقار
 const PropertySchema = new mongoose.Schema({
@@ -82,6 +94,25 @@ const PropertySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Property = mongoose.model('Property', PropertySchema);
+
+// وظيفة إرسال OTP عبر SendGrid
+const sendOTPEmail = async (email, otp) => {
+  const msg = {
+    to: email,
+    from: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
+    subject: 'Your OTP Code',
+    text: `Your OTP code is: ${otp}`,
+    html: `<strong>Your OTP code is: ${otp}</strong>`,
+  };
+
+  try {
+    await sgMail.send(msg);
+    console.log('OTP email sent successfully');
+  } catch (error) {
+    console.error('Error sending OTP email:', error);
+    throw new Error('Failed to send OTP email');
+  }
+};
 
 // **إنشاء حساب جديد**
 app.post('/register', upload.single('profileImage'), async (req, res) => {
@@ -132,9 +163,18 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     });
 
     await newUser.save();
+
+    // إنشاء وإرسال OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await sendOTPEmail(email, otp);
+
+    // حفظ OTP في قاعدة البيانات
+    const newOTP = new OTP({ email, otp });
+    await newOTP.save();
+
     res.status(201).json({
       status: 'success',
-      message: 'Account created successfully!',
+      message: 'Account created successfully. OTP sent to your email.',
       user: {
         id: newUser._id,
         firstName: newUser.firstName,
@@ -470,25 +510,47 @@ app.get('/getAllProperties', async (req, res) => {
   }
 });
 
+// **إرسال OTP**
 app.post('/send-otp', async (req, res) => {
   const { email } = req.body;
-  const otp = Math.floor(100000 + Math.random() * 900000); // إنشاء رمز OTP عشوائي
-  // هنا يمكنك استخدام خدمة مثل Nodemailer لإرسال البريد الإلكتروني
-  await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
-  // حفظ رمز OTP في قاعدة البيانات (مؤقتًا)
-  await saveOTP(email, otp);
-  res.status(200).json({ message: 'OTP sent successfully' });
-});
-app.post('/verify-otp', async (req, res) => {
-  const { email, otp } = req.body;
-  // استرجاع رمز OTP المحفوظ في قاعدة البيانات
-  const savedOTP = await getOTP(email);
-  if (savedOTP === otp) {
-    res.status(200).json({ message: 'OTP verified successfully' });
-  } else {
-    res.status(400).json({ message: 'Invalid OTP' });
+
+  try {
+    // إنشاء رمز OTP عشوائي
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // إرسال OTP عبر البريد الإلكتروني
+    await sendOTPEmail(email, otp);
+
+    // حفظ OTP في قاعدة البيانات
+    const newOTP = new OTP({ email, otp });
+    await newOTP.save();
+
+    res.status(200).json({ message: 'OTP sent successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to send OTP', error: error.message });
   }
 });
+
+// **التحقق من OTP**
+app.post('/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    // البحث عن OTP في قاعدة البيانات
+    const savedOTP = await OTP.findOne({ email, otp });
+    if (!savedOTP) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    // إذا كان OTP صحيحًا، حذفه من قاعدة البيانات
+    await OTP.deleteOne({ email, otp });
+
+    res.status(200).json({ message: 'OTP verified successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to verify OTP', error: error.message });
+  }
+});
+
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
