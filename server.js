@@ -470,6 +470,33 @@ app.get('/getAllProperties', async (req, res) => {
   }
 });
 
+
+app.post('/send-otp', async (req, res) => {
+  const { email } = req.body;
+  const otp = Math.floor(100000 + Math.random() * 900000); // إنشاء رمز OTP عشوائي
+
+  // هنا يمكنك استخدام خدمة مثل Nodemailer لإرسال البريد الإلكتروني
+  await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
+
+  // حفظ رمز OTP في قاعدة البيانات (مؤقتًا)
+  await saveOTP(email, otp);
+
+  res.status(200).json({ message: 'OTP sent successfully' });
+});
+
+app.post('/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+
+  // استرجاع رمز OTP المحفوظ في قاعدة البيانات
+  const savedOTP = await getOTP(email);
+
+  if (savedOTP === otp) {
+    res.status(200).json({ message: 'OTP verified successfully' });
+  } else {
+    res.status(400).json({ message: 'Invalid OTP' });
+  }
+});
+
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
