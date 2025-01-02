@@ -4,9 +4,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const path = require('path');
 const cloudinary = require('cloudinary').v2;
-const { Decimal128 } = require('mongodb');
+const nodemailer = require('nodemailer');
 const app = express();
 const port = 3001;
 
@@ -39,49 +38,56 @@ const userSchema = new mongoose.Schema({
   lastName: String,
   email: { type: String, unique: true },
   password: String,
-  profileImage: String, 
+  profileImage: String,
   accountType: { type: String, enum: ['Student', 'University'] },
   studentId: String,
   major: String,
-  universityName: String,  
-  universityCode: String,  
+  universityName: String,
+  universityCode: String,
   universityAddress: String,
-  studentCount: Number,   
+  studentCount: Number,
+  otp: String, // إضافة حقل OTP
 });
 
 const User = mongoose.model('User', userSchema);
 
-// تعريف نموذج العقار
-const PropertySchema = new mongoose.Schema({
-  email: { type: String, required: true },
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  profileImage: { type: String, required: true },
-  ownerId: { type: String, required: true },
-  hostelName: { type: String, required: true },
-  roomType: { type: String, enum: ['Single', 'Shared'], required: true },
-  internetAvailable: { type: Boolean, default: false },
-  bathroomType: { type: String, enum: ['Private', 'Shared'], required: true },
-  cleaningService: { type: Boolean, default: false },
-  maintenanceService: { type: Boolean, default: false },
-  securitySystem: { type: Boolean, default: false },
-  emergencyMeasures: { type: Boolean, default: false },
-  goodLighting: { type: Boolean, default: false },
-  sharedAreas: { type: Boolean, default: false },
-  studyRooms: { type: Boolean, default: false },
-  laundryRoom: { type: Boolean, default: false },
-  sharedKitchen: { type: Boolean, default: false },
-  foodService: { type: Boolean, default: false },
-  effectiveManagement: { type: Boolean, default: false },
-  psychologicalSupport: { type: Boolean, default: false },
-  location: {
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true },
+// إعداد Nodemailer لإرسال البريد الإلكتروني
+const transporter = nodemailer.createTransport({
+  service: 'gmail', // يمكنك استخدام خدمات أخرى مثل Outlook أو Yahoo
+  auth: {
+    user: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
+    pass: 'ENG:network@882001', // كلمة مرور البريد الإلكتروني
   },
-  imageUrls: [{ type: String }],
-}, { timestamps: true });
+});
 
-const Property = mongoose.model('Property', PropertySchema);
+// دالة لإرسال البريد الإلكتروني
+const sendEmail = async (to, subject, text) => {
+  try {
+    const mailOptions = {
+      from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل
+      to, // البريد الإلكتروني المستقبل
+      subject, // عنوان البريد الإلكتروني
+      text, // محتوى البريد الإلكتروني
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('Email sent successfully');
+  } catch (error) {
+    console.error('Error sending email:', error);
+    throw error;
+  }
+};
+
+// دالة لحفظ رمز OTP
+const saveOTP = async (email, otp) => {
+  try {
+    await User.findOneAndUpdate({ email }, { otp }, { upsert: true });
+    console.log('OTP saved successfully');
+  } catch (error) {
+    console.error('Error saving OTP:', error);
+    throw error;
+  }
+};
 
 // **إنشاء حساب جديد**
 app.post('/register', upload.single('profileImage'), async (req, res) => {
@@ -101,7 +107,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         status: 'error',
-        message: 'Please provide all the necessary details.',
+        message: 'User already exists. Please log in or use a different email.',
       });
     }
 
@@ -121,8 +127,8 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
       lastName,
       email,
       password: hashedPassword,
-      profileImage: profileImageUrl, 
-      accountType, 
+      profileImage: profileImageUrl,
+      accountType,
       studentId: accountType === 'Student' ? studentId : undefined,
       major: accountType === 'Student' ? major : undefined,
       universityName: accountType === 'University' ? universityName : undefined,
@@ -131,10 +137,22 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
       studentCount: accountType === 'University' ? studentCount : undefined,
     });
 
+    // حفظ المستخدم في قاعدة البيانات
     await newUser.save();
+
+    // إنشاء رمز OTP عشوائي
+    const otp = Math.floor(100000 + Math.random() * 900000);
+
+    // إرسال OTP إلى البريد الإلكتروني للمستخدم
+    await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
+
+    // حفظ OTP في قاعدة البيانات
+    await saveOTP(email, otp);
+
+    // إرسال استجابة ناجحة
     res.status(201).json({
       status: 'success',
-      message: 'Account created successfully!',
+      message: 'Account created successfully! OTP sent to your email.',
       user: {
         id: newUser._id,
         firstName: newUser.firstName,
@@ -345,155 +363,6 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
       message: 'An error occurred while updating the profile.',
       error: error.message
     });
-  }
-});
-
-// نقطة النهاية لاستقبال البيانات
-app.post('/addProperty', async (req, res) => {
-  console.log('Received request body:', req.body);
-
-  try {
-    const {
-      email,
-      firstName,
-      lastName,
-      profileImage,
-      id: ownerId,
-      hostelName,
-      roomType,
-      internetAvailable,
-      bathroomType,
-      cleaningService,
-      maintenanceService,
-      securitySystem,
-      emergencyMeasures,
-      goodLighting,
-      sharedAreas,
-      studyRooms,
-      laundryRoom,
-      sharedKitchen,
-      foodService,
-      effectiveManagement,
-      psychologicalSupport,
-      location,
-      imageUrls,
-    } = req.body;
-
-    // التحقق من وجود روابط الصور (imageUrls)
-    if (!imageUrls || imageUrls.length === 0) {
-      return res.status(400).json({ error: 'No images provided' });
-    }
-
-    // إنشاء عقار جديد
-    const newProperty = new Property({
-      email,
-      firstName,
-      lastName,
-      profileImage,
-      ownerId,
-      hostelName,
-      roomType,
-      internetAvailable,
-      bathroomType,
-      cleaningService,
-      maintenanceService,
-      securitySystem,
-      emergencyMeasures,
-      goodLighting,
-      sharedAreas,
-      studyRooms,
-      laundryRoom,
-      sharedKitchen,
-      foodService,
-      effectiveManagement,
-      psychologicalSupport,
-      location: {
-        lat: location.lat,
-        lng: location.lng,
-      },
-      imageUrls: imageUrls,
-    });
-
-    // حفظ العقار في قاعدة البيانات
-    const savedProperty = await newProperty.save();
-
-    // إرسال استجابة ناجحة
-    res.status(201).json({ message: 'Property added successfully', property: savedProperty });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to add property' });
-  }
-});
-
-// نقطة النهاية لاسترجاع جميع العقارات
-app.get('/getAllProperties', async (req, res) => {
-  try {
-    // جلب جميع العقارات من قاعدة البيانات
-    const properties = await Property.find({});
-
-    // تحويل البيانات إلى التنسيق المطلوب
-    const formattedProperties = properties.map(property => ({
-      _id: property._id,
-      type: property.hostelName, // يمكن تعديل هذا الحقل حسب احتياجاتك
-      price: property.price || 'N/A', // إذا كان السعر غير موجود، يتم تعيينه إلى 'N/A'
-      size: property.size || 'N/A', // إذا كان الحجم غير موجود، يتم تعيينه إلى 'N/A'
-      rooms: property.rooms || 0, // إذا كان عدد الغرف غير موجود، يتم تعيينه إلى 0
-      imageUrls: property.imageUrls || [], // استخدام أول صورة كصورة رئيسية
-      location: {
-        lat: property.location.lat,
-        lng: property.location.lng,
-      },
-      ownerId: property.ownerId,
-      profileImage: property.profileImage,
-      bathroomType: property.bathroomType,
-      internetAvailable: property.internetAvailable,
-      cleaningService: property.cleaningService,
-      maintenanceService: property.maintenanceService,
-      securitySystem: property.securitySystem,
-      emergencyMeasures: property.emergencyMeasures,
-      goodLighting: property.goodLighting,
-      sharedAreas: property.sharedAreas,
-      studyRooms: property.studyRooms,
-      laundryRoom: property.laundryRoom,
-      sharedKitchen: property.sharedKitchen,
-      foodService: property.foodService,
-      effectiveManagement: property.effectiveManagement,
-      psychologicalSupport: property.psychologicalSupport,
-    }));
-      // استخدام JSON.stringify لطباعة البيانات بشكل مفصل
-    console.log('Response Data:', JSON.stringify({ properties: formattedProperties }, null, 2));
-    // إرسال الاستجابة
-    res.status(200).json({ properties: formattedProperties });
-  } catch (error) {
-    console.error('Error fetching properties:', error);
-    res.status(500).json({ error: 'Failed to fetch properties' });
-  }
-});
-
-
-app.post('/send-otp', async (req, res) => {
-  const { email } = req.body;
-  const otp = Math.floor(100000 + Math.random() * 900000); // إنشاء رمز OTP عشوائي
-
-  // هنا يمكنك استخدام خدمة مثل Nodemailer لإرسال البريد الإلكتروني
-  await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
-
-  // حفظ رمز OTP في قاعدة البيانات (مؤقتًا)
-  await saveOTP(email, otp);
-
-  res.status(200).json({ message: 'OTP sent successfully' });
-});
-
-app.post('/verify-otp', async (req, res) => {
-  const { email, otp } = req.body;
-
-  // استرجاع رمز OTP المحفوظ في قاعدة البيانات
-  const savedOTP = await getOTP(email);
-
-  if (savedOTP === otp) {
-    res.status(200).json({ message: 'OTP verified successfully' });
-  } else {
-    res.status(400).json({ message: 'Invalid OTP' });
   }
 });
 
