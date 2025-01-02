@@ -4,8 +4,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 const cloudinary = require('cloudinary').v2;
-const sgMail = require('@sendgrid/mail'); // استيراد SendGrid
+const nodemailer = require('nodemailer');
+const { Decimal128 } = require('mongodb');
 const app = express();
 const port = 3001;
 
@@ -51,20 +53,58 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// إعداد SendGrid
-sgMail.setApiKey('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'); // استخدم المفتاح الذي قدمته
+// تعريف نموذج العقار
+const PropertySchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  profileImage: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  hostelName: { type: String, required: true },
+  roomType: { type: String, enum: ['Single', 'Shared'], required: true },
+  internetAvailable: { type: Boolean, default: false },
+  bathroomType: { type: String, enum: ['Private', 'Shared'], required: true },
+  cleaningService: { type: Boolean, default: false },
+  maintenanceService: { type: Boolean, default: false },
+  securitySystem: { type: Boolean, default: false },
+  emergencyMeasures: { type: Boolean, default: false },
+  goodLighting: { type: Boolean, default: false },
+  sharedAreas: { type: Boolean, default: false },
+  studyRooms: { type: Boolean, default: false },
+  laundryRoom: { type: Boolean, default: false },
+  sharedKitchen: { type: Boolean, default: false },
+  foodService: { type: Boolean, default: false },
+  effectiveManagement: { type: Boolean, default: false },
+  psychologicalSupport: { type: Boolean, default: false },
+  location: {
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+  },
+  imageUrls: [{ type: String }],
+}, { timestamps: true });
 
-// دالة لإرسال البريد الإلكتروني باستخدام SendGrid
+const Property = mongoose.model('Property', PropertySchema);
+
+// إعداد Nodemailer لإرسال البريد الإلكتروني
+const transporter = nodemailer.createTransport({
+  service: 'gmail', // يمكنك استخدام خدمات أخرى مثل Outlook أو Yahoo
+  auth: {
+    user: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
+    pass: 'ENG:network@882001', // كلمة مرور البريد الإلكتروني
+  },
+});
+
+// دالة لإرسال البريد الإلكتروني
 const sendEmail = async (to, subject, text) => {
-  const msg = {
-    to, // البريد الإلكتروني المستقبل
-    from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل (يجب أن يكون مسجلًا في SendGrid)
-    subject, // عنوان البريد الإلكتروني
-    text, // محتوى البريد الإلكتروني
-  };
-
   try {
-    await sgMail.send(msg);
+    const mailOptions = {
+      from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل
+      to, // البريد الإلكتروني المستقبل
+      subject, // عنوان البريد الإلكتروني
+      text, // محتوى البريد الإلكتروني
+    };
+
+    await transporter.sendMail(mailOptions);
     console.log('Email sent successfully');
   } catch (error) {
     console.error('Error sending email:', error);
@@ -79,6 +119,17 @@ const saveOTP = async (email, otp) => {
     console.log('OTP saved successfully');
   } catch (error) {
     console.error('Error saving OTP:', error);
+    throw error;
+  }
+};
+
+// دالة لاسترجاع رمز OTP
+const getOTP = async (email) => {
+  try {
+    const user = await User.findOne({ email });
+    return user ? user.otp : null;
+  } catch (error) {
+    console.error('Error retrieving OTP:', error);
     throw error;
   }
 };
@@ -101,7 +152,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         status: 'error',
-        message: 'User already exists. Please log in or use a different email.',
+        message: 'Please provide all the necessary details.',
       });
     }
 
@@ -131,22 +182,10 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
       studentCount: accountType === 'University' ? studentCount : undefined,
     });
 
-    // حفظ المستخدم في قاعدة البيانات
     await newUser.save();
-
-    // إنشاء رمز OTP عشوائي
-    const otp = Math.floor(100000 + Math.random() * 900000);
-
-    // إرسال OTP إلى البريد الإلكتروني للمستخدم
-    await sendEmail(email, 'Your OTP Code', `Your OTP code is: ${otp}`);
-
-    // حفظ OTP في قاعدة البيانات
-    await saveOTP(email, otp);
-
-    // إرسال استجابة ناجحة
     res.status(201).json({
       status: 'success',
-      message: 'Account created successfully! OTP sent to your email.',
+      message: 'Account created successfully!',
       user: {
         id: newUser._id,
         firstName: newUser.firstName,
@@ -359,6 +398,130 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
     });
   }
 });
+
+// نقطة النهاية لاستقبال البيانات
+app.post('/addProperty', async (req, res) => {
+  console.log('Received request body:', req.body);
+
+  try {
+    const {
+      email,
+      firstName,
+      lastName,
+      profileImage,
+      id: ownerId,
+      hostelName,
+      roomType,
+      internetAvailable,
+      bathroomType,
+      cleaningService,
+      maintenanceService,
+      securitySystem,
+      emergencyMeasures,
+      goodLighting,
+      sharedAreas,
+      studyRooms,
+      laundryRoom,
+      sharedKitchen,
+      foodService,
+      effectiveManagement,
+      psychologicalSupport,
+      location,
+      imageUrls,
+    } = req.body;
+
+    // التحقق من وجود روابط الصور (imageUrls)
+    if (!imageUrls || imageUrls.length === 0) {
+      return res.status(400).json({ error: 'No images provided' });
+    }
+
+    // إنشاء عقار جديد
+    const newProperty = new Property({
+      email,
+      firstName,
+      lastName,
+      profileImage,
+      ownerId,
+      hostelName,
+      roomType,
+      internetAvailable,
+      bathroomType,
+      cleaningService,
+      maintenanceService,
+      securitySystem,
+      emergencyMeasures,
+      goodLighting,
+      sharedAreas,
+      studyRooms,
+      laundryRoom,
+      sharedKitchen,
+      foodService,
+      effectiveManagement,
+      psychologicalSupport,
+      location: {
+        lat: location.lat,
+        lng: location.lng,
+      },
+      imageUrls: imageUrls,
+    });
+
+    // حفظ العقار في قاعدة البيانات
+    const savedProperty = await newProperty.save();
+
+    // إرسال استجابة ناجحة
+    res.status(201).json({ message: 'Property added successfully', property: savedProperty });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to add property' });
+  }
+});
+
+// نقطة النهاية لاسترجاع جميع العقارات
+app.get('/getAllProperties', async (req, res) => {
+  try {
+    // جلب جميع العقارات من قاعدة البيانات
+    const properties = await Property.find({});
+
+    // تحويل البيانات إلى التنسيق المطلوب
+    const formattedProperties = properties.map(property => ({
+      _id: property._id,
+      type: property.hostelName, // يمكن تعديل هذا الحقل حسب احتياجاتك
+      price: property.price || 'N/A', // إذا كان السعر غير موجود، يتم تعيينه إلى 'N/A'
+      size: property.size || 'N/A', // إذا كان الحجم غير موجود، يتم تعيينه إلى 'N/A'
+      rooms: property.rooms || 0, // إذا كان عدد الغرف غير موجود، يتم تعيينه إلى 0
+      imageUrls: property.imageUrls || [], // استخدام أول صورة كصورة رئيسية
+      location: {
+        lat: property.location.lat,
+        lng: property.location.lng,
+      },
+      ownerId: property.ownerId,
+      profileImage: property.profileImage,
+      bathroomType: property.bathroomType,
+      internetAvailable: property.internetAvailable,
+      cleaningService: property.cleaningService,
+      maintenanceService: property.maintenanceService,
+      securitySystem: property.securitySystem,
+      emergencyMeasures: property.emergencyMeasures,
+      goodLighting: property.goodLighting,
+      sharedAreas: property.sharedAreas,
+      studyRooms: property.studyRooms,
+      laundryRoom: property.laundryRoom,
+      sharedKitchen: property.sharedKitchen,
+      foodService: property.foodService,
+      effectiveManagement: property.effectiveManagement,
+      psychologicalSupport: property.psychologicalSupport,
+    }));
+      // استخدام JSON.stringify لطباعة البيانات بشكل مفصل
+    console.log('Response Data:', JSON.stringify({ properties: formattedProperties }, null, 2));
+    // إرسال الاستجابة
+    res.status(200).json({ properties: formattedProperties });
+  } catch (error) {
+    console.error('Error fetching properties:', error);
+    res.status(500).json({ error: 'Failed to fetch properties' });
+  }
+});
+
+
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
