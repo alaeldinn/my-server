@@ -5,7 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cloudinary = require('cloudinary').v2;
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail'); // استيراد SendGrid
 const app = express();
 const port = 3001;
 
@@ -51,26 +51,20 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// إعداد Nodemailer لإرسال البريد الإلكتروني
-const transporter = nodemailer.createTransport({
-  service: 'gmail', // يمكنك استخدام خدمات أخرى مثل Outlook أو Yahoo
-  auth: {
-    user: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
-    pass: 'ENG:network@882001', // كلمة مرور البريد الإلكتروني
-  },
-});
+// إعداد SendGrid
+sgMail.setApiKey('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'); // استخدم المفتاح الذي قدمته
 
-// دالة لإرسال البريد الإلكتروني
+// دالة لإرسال البريد الإلكتروني باستخدام SendGrid
 const sendEmail = async (to, subject, text) => {
-  try {
-    const mailOptions = {
-      from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل
-      to, // البريد الإلكتروني المستقبل
-      subject, // عنوان البريد الإلكتروني
-      text, // محتوى البريد الإلكتروني
-    };
+  const msg = {
+    to, // البريد الإلكتروني المستقبل
+    from: 'alaeldindev@gmail.com', // البريد الإلكتروني المرسل (يجب أن يكون مسجلًا في SendGrid)
+    subject, // عنوان البريد الإلكتروني
+    text, // محتوى البريد الإلكتروني
+  };
 
-    await transporter.sendMail(mailOptions);
+  try {
+    await sgMail.send(msg);
     console.log('Email sent successfully');
   } catch (error) {
     console.error('Error sending email:', error);
