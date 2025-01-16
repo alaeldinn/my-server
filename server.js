@@ -7,20 +7,18 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const { Decimal128 } = require('mongodb');
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
+const braintree = require('braintree');
+const bodyParser = require('body-parser'); // استيراد body-parser
 const app = express();
+const stripe = require('stripe')('sk_test_51QfmCJKwGdbDTqjONl2F5gSRpVuTE4NEsfeuHYMnex8SRAu0uIex8PqpCBoXkJDyTMx9WfMsPoMX0T3QzdTmv6aQ00fLzBugFe');
 const port = 3001;
 
-// إعداد SendGrid
-sgMail.setApiKey('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');
-
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
-app.use(cors());
-
-// إعداد Body parser لقراءة البيانات من الطلبات
+app.use(cors());// إعداد Body parser لقراءة البيانات من الطلبات
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use(bodyParser.json());
 // الاتصال بقاعدة بيانات MongoDB
 mongoose.connect('mongodb+srv://ahmed:jFRDH2EgcI8AD9m4@cluster0.gcasm.mongodb.net/userDB?retryWrites=true&w=majority')
   .then(() => console.log('Connected to MongoDB'))
@@ -63,7 +61,6 @@ const otpSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 const OTP = mongoose.model('OTP', otpSchema);
 
-// تعريف نموذج العقار
 const PropertySchema = new mongoose.Schema({
   email: { type: String, required: true },
   firstName: { type: String, required: true },
@@ -71,42 +68,60 @@ const PropertySchema = new mongoose.Schema({
   profileImage: { type: String, required: true },
   ownerId: { type: String, required: true },
   hostelName: { type: String, required: true },
-  roomType: { type: String, enum: ['Single', 'Shared'], required: true },
-  internetAvailable: { type: Boolean, default: false },
-  bathroomType: { type: String, enum: ['Private', 'Shared'], required: true },
-  cleaningService: { type: Boolean, default: false },
-  maintenanceService: { type: Boolean, default: false },
-  securitySystem: { type: Boolean, default: false },
-  emergencyMeasures: { type: Boolean, default: false },
-  goodLighting: { type: Boolean, default: false },
-  sharedAreas: { type: Boolean, default: false },
-  studyRooms: { type: Boolean, default: false },
-  laundryRoom: { type: Boolean, default: false },
-  sharedKitchen: { type: Boolean, default: false },
-  foodService: { type: Boolean, default: false },
-  effectiveManagement: { type: Boolean, default: false },
-  psychologicalSupport: { type: Boolean, default: false },
+  singleRooms: { type: Number, required: true }, // عدد الغرف الفردية
+  sharedRooms: { type: Number, required: true }, // عدد الغرف المشتركة
+  bedsPerSharedRoom: { type: Number, required: true }, // عدد الأسرة في الغرفة المشتركة
+  internetAvailable: { type: Boolean, default: false }, // توفر الإنترنت
+  bathroomType: { type: String, enum: ['Private', 'Shared'], required: true }, // نوع الحمام
+  cleaningService: { type: Boolean, default: false }, // خدمة التنظيف
+  maintenanceService: { type: Boolean, default: false }, // خدمة الصيانة
+  securitySystem: { type: Boolean, default: false }, // نظام الأمان
+  emergencyMeasures: { type: Boolean, default: false }, // إجراءات الطوارئ
+  goodLighting: { type: Boolean, default: false }, // إضاءة جيدة
+  sharedAreas: { type: Boolean, default: false }, // مناطق مشتركة
+  studyRooms: { type: Boolean, default: false }, // غرف دراسة
+  laundryRoom: { type: Boolean, default: false }, // غرفة غسيل
+  sharedKitchen: { type: Boolean, default: false }, // مطبخ مشترك
+  foodService: { type: Boolean, default: false }, // خدمة الطعام
+  effectiveManagement: { type: Boolean, default: false }, // إدارة فعالة
+  psychologicalSupport: { type: Boolean, default: false }, // دعم نفسي
   location: {
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true },
+    lat: { type: Number, required: true }, // خط العرض
+    lng: { type: Number, required: true }, // خط الطول
   },
-  imageUrls: [{ type: String }],
+  imageUrls: [{ type: String }], // روابط الصور
+  singleRoomPrice: { type: Number, required: true }, // سعر الغرفة الفردية
+  sharedRoomPrice: { type: Number, required: true }, // سعر الغرفة المشتركة
+  pricePeriod: { type: String, enum: ['day', 'month', 'semester'], required: true }, // فترة السعر
+  state: { type: String, required: true }, // الولاية
+  index: { type: Number, default: 0 }, // الفهرس
 }, { timestamps: true });
 
-const Property = mongoose.model('Property', PropertySchema);
 
-// وظيفة إرسال OTP عبر SendGrid
+
+
+const Property = mongoose.model('Property', PropertySchema);
+// إعداد nodemailer لإرسال البريد عبر Gmail
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'alaeldindev@gmail.com', // استبدل ببريدك الإلكتروني
+    pass: 'ymya nmbo glwq aghv', // استبدل بكلمة مرور التطبيقات
+  },
+});
+
+// وظيفة إرسال OTP عبر Gmail
 const sendOTPEmail = async (email, otp) => {
-  const msg = {
-    to: email,
+  const mailOptions = {
     from: 'alaeldindev@gmail.com', // البريد الإلكتروني الخاص بك
+    to: email,
     subject: 'Your OTP Code',
     text: `Your OTP code is: ${otp}`,
     html: `<strong>Your OTP code is: ${otp}</strong>`,
   };
 
   try {
-    await sgMail.send(msg);
+    await transporter.sendMail(mailOptions);
     console.log('OTP email sent successfully');
   } catch (error) {
     console.error('Error sending OTP email:', error);
@@ -120,10 +135,14 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     const { firstName, lastName, email, password, accountType, studentId, major, universityName, universityCode, universityAddress, studentCount } = req.body;
 
     // تحقق من صحة البيانات
-    if (!firstName || !lastName || !email || !password || !accountType) {
+    const requiredFields = ['firstName', 'lastName', 'email', 'password', 'accountType'];
+    const missingFields = requiredFields.filter(field => !req.body[field]);
+
+    if (missingFields.length > 0) {
       return res.status(400).json({
         status: 'error',
-        message: 'All fields are required.',
+        message: 'Please provide all the necessary details.',
+        missingFields: missingFields,
       });
     }
 
@@ -132,7 +151,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     if (existingUser) {
       return res.status(409).json({
         status: 'error',
-        message: 'Please provide all the necessary details.',
+        message: 'User already exists. Please use a different email.',
       });
     }
 
@@ -388,19 +407,56 @@ app.post('/update-profile', upload.single('profileImage'), async (req, res) => {
   }
 });
 
-// نقطة النهاية لاستقبال البيانات
 app.post('/addProperty', async (req, res) => {
-  console.log('Received request body:', req.body);
+  const {
+    email,
+    firstName,
+    lastName,
+    profileImage,
+    ownerId,
+    hostelName,
+    singleRooms,
+    sharedRooms,
+    bedsPerSharedRoom,
+    internetAvailable,
+    bathroomType,
+    cleaningService,
+    maintenanceService,
+    securitySystem,
+    emergencyMeasures,
+    goodLighting,
+    sharedAreas,
+    studyRooms,
+    laundryRoom,
+    sharedKitchen,
+    foodService,
+    effectiveManagement,
+    psychologicalSupport,
+    location,
+    imageUrls,
+    singleRoomPrice,
+    sharedRoomPrice,
+    pricePeriod,
+    state,
+  } = req.body;
 
   try {
-    const {
+    // التحقق من البيانات
+    if (!hostelName || !singleRooms || !sharedRooms || !bedsPerSharedRoom || !location) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // إضافة العقار إلى قاعدة البيانات
+    const newProperty = new Property({
       email,
       firstName,
       lastName,
       profileImage,
-      id: ownerId,
+      ownerId,
       hostelName,
-      roomType,
+      singleRooms,
+      sharedRooms,
+      bedsPerSharedRoom,
       internetAvailable,
       bathroomType,
       cleaningService,
@@ -417,71 +473,41 @@ app.post('/addProperty', async (req, res) => {
       psychologicalSupport,
       location,
       imageUrls,
-    } = req.body;
-
-    // التحقق من وجود روابط الصور (imageUrls)
-    if (!imageUrls || imageUrls.length === 0) {
-      return res.status(400).json({ error: 'No images provided' });
-    }
-
-    // إنشاء عقار جديد
-    const newProperty = new Property({
-      email,
-      firstName,
-      lastName,
-      profileImage,
-      ownerId,
-      hostelName,
-      roomType,
-      internetAvailable,
-      bathroomType,
-      cleaningService,
-      maintenanceService,
-      securitySystem,
-      emergencyMeasures,
-      goodLighting,
-      sharedAreas,
-      studyRooms,
-      laundryRoom,
-      sharedKitchen,
-      foodService,
-      effectiveManagement,
-      psychologicalSupport,
-      location: {
-        lat: location.lat,
-        lng: location.lng,
-      },
-      imageUrls: imageUrls,
+      singleRoomPrice,
+      sharedRoomPrice,
+      pricePeriod,
+      state,
     });
 
-    // حفظ العقار في قاعدة البيانات
-    const savedProperty = await newProperty.save();
+    await newProperty.save();
 
-    // إرسال استجابة ناجحة
-    res.status(201).json({ message: 'Property added successfully', property: savedProperty });
+    res.status(201).json({ message: "Property added successfully" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to add property' });
+    console.error("Error adding property:", error);
+    res.status(500).json({ error: "Failed to add property" });
   }
 });
 
-// نقطة النهاية لاسترجاع جميع العقارات
 app.get('/getAllProperties', async (req, res) => {
   try {
     // جلب جميع العقارات من قاعدة البيانات
     const properties = await Property.find({});
 
     // تحويل البيانات إلى التنسيق المطلوب
-    const formattedProperties = properties.map(property => ({
+    const formattedProperties = properties.map((property, index) => ({
       _id: property._id,
-      type: property.hostelName, // يمكن تعديل هذا الحقل حسب احتياجاتك
-      price: property.price || 'N/A', // إذا كان السعر غير موجود، يتم تعيينه إلى 'N/A'
-      size: property.size || 'N/A', // إذا كان الحجم غير موجود، يتم تعيينه إلى 'N/A'
-      rooms: property.rooms || 0, // إذا كان عدد الغرف غير موجود، يتم تعيينه إلى 0
+      hostelName: property.hostelName, // استخدام hostelName بدلاً من type
+      pricePeriod: property.pricePeriod || 'N/A', // إرجاع الفترة الزمنية
+      singleRooms: parseFloat(property.singleRooms) || 0, // تحويل singleRooms إلى Double
+      sharedRooms: parseFloat(property.sharedRooms) || 0, // تحويل sharedRooms إلى Double
+      bedsPerSharedRoom: parseFloat(property.bedsPerSharedRoom) || 0, // تحويل bedsPerSharedRoom إلى Double
+      singleRoomPrice: parseFloat(property.singleRoomPrice) || 0, // تحويل singleRoomPrice إلى Double
+      sharedRoomPrice: parseFloat(property.sharedRoomPrice) || 0, // تحويل sharedRoomPrice إلى Double
+      index: index + 1, // استخدام الفهرس الذي يتم تمريره تلقائيًا في map
       imageUrls: property.imageUrls || [], // استخدام أول صورة كصورة رئيسية
       location: {
-        lat: property.location.lat,
-        lng: property.location.lng,
+        lat: parseFloat(property.location.lat), // تحويل lat إلى Double
+        lng: parseFloat(property.location.lng), // تحويل lng إلى Double
       },
       ownerId: property.ownerId,
       profileImage: property.profileImage,
@@ -499,14 +525,42 @@ app.get('/getAllProperties', async (req, res) => {
       foodService: property.foodService,
       effectiveManagement: property.effectiveManagement,
       psychologicalSupport: property.psychologicalSupport,
+      state: property.state, // إضافة الولاية
     }));
-      // استخدام JSON.stringify لطباعة البيانات بشكل مفصل
+
+    // استخدام JSON.stringify لطباعة البيانات بشكل مفصل
     console.log('Response Data:', JSON.stringify({ properties: formattedProperties }, null, 2));
+
     // إرسال الاستجابة
     res.status(200).json({ properties: formattedProperties });
   } catch (error) {
     console.error('Error fetching properties:', error);
     res.status(500).json({ error: 'Failed to fetch properties' });
+  }
+});
+
+
+// نقطة النهاية لجلب بيانات مالك العقار
+app.get('/getOwnerDetails/:ownerId', async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+
+    // البحث عن المستخدم باستخدام ownerId
+    const owner = await User.findById(ownerId);
+
+    if (!owner) {
+      return res.status(404).json({ message: 'Owner not found' });
+    }
+
+    // إرجاع بيانات المالك
+    res.status(200).json({
+      firstName: owner.firstName,
+      lastName: owner.lastName,
+      profileImage: owner.profileImage,
+    });
+  } catch (error) {
+    console.error('Error fetching owner details:', error);
+    res.status(500).json({ message: 'Failed to fetch owner details', error: error.message });
   }
 });
 
@@ -548,6 +602,407 @@ app.post('/verify-otp', async (req, res) => {
     res.status(200).json({ message: 'OTP verified successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Failed to verify OTP', error: error.message });
+  }
+});
+
+// دالة لحساب المسافة بين نقطتين باستخدام صيغة Haversine
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const earthRadius = 6371; // نصف قطر الأرض بالكيلومترات
+
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadius * c; // المسافة بالكيلومترات
+}
+
+// دالة لتحويل الدرجات إلى راديان
+function toRadians(degree) {
+  return degree * (Math.PI / 180);
+}
+
+// إضافة نقطة نهاية جديدة في Express
+app.post('/getLocationRecommendations', async (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: 'Latitude and longitude are required' });
+  }
+
+  try {
+    // جلب جميع العقارات من قاعدة البيانات
+    const allProperties = await Property.find({});
+
+    // تحويل البيانات إلى التنسيق المطلوب
+    const propertiesWithDistances = allProperties.map((property) => {
+      const propertyLatitude = property.location.lat;
+      const propertyLongitude = property.location.lng;
+
+      // حساب المسافة بين العقار الحالي والموقع المحدد
+      const distance = calculateDistance(latitude, longitude, propertyLatitude, propertyLongitude);
+
+      return {
+        ...property.toObject(),
+        distance,
+      };
+    });
+
+    // تصفية العقارات التي تبعد أقل من أو تساوي 10 كيلومترات
+    const recommendedProperties = propertiesWithDistances.filter(
+      (property) => property.distance <= 10
+    );
+
+    // إرسال الاستجابة
+    res.status(200).json({ properties: recommendedProperties });
+  } catch (error) {
+    console.error('Error fetching location recommendations:', error);
+    res.status(500).json({ error: 'Failed to fetch location recommendations' });
+  }
+});
+
+
+// نموذج الحجز
+const bookingSchema = new mongoose.Schema({
+  propertyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Property', required: true }, // معرف العقار
+  ownerId: { type: String, required: true }, // معرف المالك
+  firstName: { type: String, required: true }, // الاسم الأول للطالب
+  lastName: { type: String, required: true }, // الاسم الأخير للطالب
+  email: { type: String, required: true }, // البريد الإلكتروني للطالب
+  phone: { type: String, required: true }, // رقم الهاتف للطالب
+  roomType: { type: String, required: true, enum: ['Single', 'Shared'] }, // نوع الغرفة
+  price: { type: Number, required: true }, // سعر العقار
+  pricePeriod: { type: String, required: true }, // الفترة الزمنية للسعر
+  bookingDate: { type: Date, default: Date.now }, // تاريخ الحجز
+});
+
+const Booking = mongoose.model('Booking', bookingSchema);
+
+// نقطة نهاية لتسجيل الحجز
+app.post('/submitBooking', async (req, res) => {
+  console.log(req.body); // طباعة البيانات المستلمة
+  try {
+    const {
+      propertyId,
+      ownerId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      roomType,
+      price,
+      pricePeriod,
+    } = req.body;
+
+    // التحقق من وجود جميع الحقول المطلوبة
+    if (!propertyId || !ownerId || !firstName || !lastName || !email || !phone || !roomType || !price || !pricePeriod) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // التحقق من صحة رقم الهاتف (يمكن إضافة مكتبة مثل libphonenumber-js للتحقق من صحة الرقم)
+    if (!isValidPhoneNumber(phone)) {
+      return res.status(400).json({ message: 'Invalid phone number' });
+    }
+
+    // إنشاء حجز جديد
+    const newBooking = new Booking({
+      propertyId,
+      ownerId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      roomType,
+      price,
+      pricePeriod,
+    });
+
+    // حفظ الحجز في قاعدة البيانات
+    await newBooking.save();
+
+    // إرسال استجابة ناجحة
+    res.status(201).json({ message: 'Booking submitted successfully', booking: newBooking });
+  } catch (error) {
+    console.error('Error submitting booking:', error);
+    res.status(500).json({ message: 'Failed to submit booking', error: error.message });
+  }
+});
+
+// دالة للتحقق من صحة رقم الهاتف (يمكن استبدالها بمكتبة مثل libphonenumber-js)
+function isValidPhoneNumber(phone) {
+  // يمكن إضافة منطق للتحقق من صحة الرقم بناءً على رمز الدولة
+  return phone && phone.length >= 7 && phone.length <= 15; // مثال بسيط
+}
+
+
+app.get('/booking/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params;
+
+    // البحث عن الحجز باستخدام رقم الهاتف (phone) وجلب بيانات العقار المرتبط
+    const booking = await Booking.findOne({ phone }).populate('propertyId');
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    // تحويل propertyId إلى S/N
+    const serialNumber = booking.propertyId._id.toString().substring(0, 6).toUpperCase();
+
+    // إرسال البيانات المطلوبة
+    res.status(200).json({
+      bookingDate: booking.bookingDate.toLocaleString(), // تاريخ الحجز
+      firstName: booking.firstName, // الاسم الأول
+      lastName: booking.lastName, // الاسم الأخير
+      email: booking.email, // البريد الإلكتروني
+      phone: booking.phone, // رقم الهاتف
+      roomType: booking.roomType, // نوع الغرفة
+      price: booking.price, // السعر
+      pricePeriod: booking.pricePeriod, // الفترة الزمنية
+      serialNumber, // الرقم التسلسلي (S/N)
+      property: {
+        hostelName: booking.propertyId.hostelName, // اسم العقار
+        location: booking.propertyId.location, // موقع العقار
+        imageUrls: booking.propertyId.imageUrls, // صور العقار
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching booking details:', error);
+    res.status(500).json({ message: 'Failed to fetch booking details', error: error.message });
+  }
+});
+
+
+//1. جلب العقارات الخاصة بالمستخدم:
+
+app.get('/getPropertiesByOwner/:ownerId', async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+
+    // جلب العقارات الخاصة بالمستخدم
+    const properties = await Property.find({ ownerId });
+
+    res.status(200).json({ properties });
+  } catch (error) {
+    console.error('Error fetching properties:', error);
+    res.status(500).json({ error: 'Failed to fetch properties' });
+  }
+});
+
+//2. حذف العقار:
+
+
+app.delete('/deleteProperty/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+
+    // حذف العقار
+    await Property.findByIdAndDelete(propertyId);
+
+    res.status(200).json({ message: 'Property deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting property:', error);
+    res.status(500).json({ error: 'Failed to delete property' });
+  }
+});
+
+
+app.put('/updateProperty/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+    const updatedData = req.body;
+
+    // تحديث العقار
+    const updatedProperty = await Property.findByIdAndUpdate(propertyId, updatedData, { new: true });
+
+    res.status(200).json({ message: 'Property updated successfully', property: updatedProperty });
+  } catch (error) {
+    console.error('Error updating property:', error);
+    res.status(500).json({ error: 'Failed to update property' });
+  }
+});
+
+app.get('/client-token', async (req, res) => {
+  try {
+    const clientToken = await gateway.clientToken.generate({});
+    res.status(200).json({ clientToken: clientToken.clientToken });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+}); 
+const gateway = new braintree.BraintreeGateway({
+  environment: braintree.Environment.Sandbox, // أو Production
+  merchantId: 'wq436ncg39rjd575',
+  publicKey: 'ftjy44vpjpwbmy3f',
+  privateKey: 'c3347ef3d1ae2c401fd8595f19a369cf',
+});
+
+app.post('/braintree-webhook', (req, res) => {
+  const webhookNotification = gateway.webhookNotification.parse(
+    req.body.bt_signature,
+    req.body.bt_payload
+  );
+
+  switch (webhookNotification.kind) {
+    case 'transaction_settled':
+      console.log('Payment settled:', webhookNotification.transaction.id);
+      // قم بتنفيذ الإجراءات المطلوبة هنا
+      break;
+
+    case 'transaction_failed':
+      console.log('Payment failed:', webhookNotification.transaction.id);
+      // قم بتنفيذ الإجراءات المطلوبة هنا
+      break;
+
+    default:
+      console.log('Unhandled webhook event:', webhookNotification.kind);
+  }
+
+  res.status(200).send('Webhook received');
+});
+
+app.post('/process-payment', async (req, res) => {
+  const { paymentNonce, amount } = req.body;
+
+  try {
+    const result = await gateway.transaction.sale({
+      amount: amount,
+      paymentMethodNonce: paymentNonce,
+      options: {
+        submitForSettlement: true,
+      },
+    });
+
+    if (result.success) {
+      res.status(200).json({ message: 'Payment successful', transactionId: result.transaction.id });
+    } else {
+      res.status(400).json({ message: 'Payment failed', error: result.message });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+
+
+
+
+app.use(bodyParser.json());
+// نقطة نهاية لإنشاء PaymentIntent
+app.post('/create-payment-intent', async (req, res) => {
+  const { amount } = req.body;
+
+  // تسجيل البيانات الواردة
+  console.log('Received request to create PaymentIntent with amount:', amount);
+
+  try {
+    // إنشاء PaymentIntent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount, // المبلغ بالـ سنتات
+      currency: 'usd',
+    });
+
+    // تسجيل تفاصيل PaymentIntent
+    console.log('PaymentIntent created successfully:', paymentIntent.id);
+
+    // إرسال الرد إلى العميل
+    res.send({
+      client_secret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    // تسجيل الخطأ
+    console.error('Error creating PaymentIntent:', error.message);
+
+    // إرسال رسالة الخطأ إلى العميل
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.post('/submitRating', async (req, res) => {
+  const { propertyId, userId, rating, comment } = req.body;
+
+  try {
+    // التحقق من وجود العقار والمستخدم
+    const property = await Property.findById(propertyId);
+    const user = await User.findById(userId);
+
+    if (!property || !user) {
+      return res.status(404).json({ message: 'Property or user not found' });
+    }
+
+    // إضافة التقييم إلى العقار
+    property.ratings.push({ userId, rating, comment });
+    await property.save();
+
+    res.status(201).json({ message: 'Rating submitted successfully' });
+  } catch (error) {
+    console.error('Error submitting rating:', error);
+    res.status(500).json({ message: 'Failed to submit rating', error: error.message });
+  }
+});
+
+
+// دالة لحساب المسافة بين نقطتين باستخدام صيغة Haversine
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const earthRadius = 6371; // نصف قطر الأرض بالكيلومترات
+
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadius * c; // المسافة بالكيلومترات
+}
+
+// دالة لتحويل الدرجات إلى راديان
+function toRadians(degree) {
+  return degree * (Math.PI / 180);
+}
+
+// نقطة نهاية لجلب العقارات القريبة ضمن 10 كيلومترات
+app.post('/getNearbyProperties', async (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: 'Latitude and longitude are required' });
+  }
+
+  try {
+    // جلب جميع العقارات من قاعدة البيانات
+    const allProperties = await Property.find({});
+
+    // حساب المسافة بين موقع المستخدم وكل عقار
+    const propertiesWithDistances = allProperties.map((property) => {
+      const propertyLatitude = property.location.lat;
+      const propertyLongitude = property.location.lng;
+
+      // حساب المسافة
+      const distance = calculateDistance(latitude, longitude, propertyLatitude, propertyLongitude);
+
+      return {
+        ...property.toObject(),
+        distance,
+      };
+    });
+
+    // تصفية العقارات التي تبعد أقل من أو تساوي 10 كيلومترات
+    const nearbyProperties = propertiesWithDistances.filter(
+      (property) => property.distance <= 10
+    );
+
+    // إرسال الاستجابة
+    res.status(200).json({ properties: nearbyProperties });
+  } catch (error) {
+    console.error('Error fetching nearby properties:', error);
+    res.status(500).json({ error: 'Failed to fetch nearby properties' });
   }
 });
 
