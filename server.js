@@ -2015,15 +2015,19 @@ async function updateOldMessages() {
 
 
 // حذف مستخدم بناءً على ID
-
-app.delete('/deleteUser/:id', async (req, res) => {
+app.delete('/deleteUser/id', async (req, res) => {
   try {
-    const userId = mongoose.Types.ObjectId(req.params.id);
+    const userId = req.params.id;
+
+    // التحقق من وجود المستخدم
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    // حذف المستخدم
     await User.findByIdAndDelete(userId);
+
     res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error(error);
