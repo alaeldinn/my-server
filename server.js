@@ -2015,7 +2015,7 @@ async function updateOldMessages() {
 
 
 // حذف مستخدم بناءً على ID
-app.delete('/deleteUser/:id', async (req, res) => {
+app.delete('/deleteUser/id', async (req, res) => {
   try {
     const userId = req.params.id;
 
