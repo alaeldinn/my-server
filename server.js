@@ -11,6 +11,7 @@ const nodemailer = require('nodemailer');
 const braintree = require('braintree');
 const bodyParser = require('body-parser'); // استيراد body-parser
 const app = express();
+const axios = require('axios');
 const stripe = require('stripe')('sk_test_51QfmCJKwGdbDTqjONl2F5gSRpVuTE4NEsfeuHYMnex8SRAu0uIex8PqpCBoXkJDyTMx9WfMsPoMX0T3QzdTmv6aQ00fLzBugFe');
 const port = 3001;
 
@@ -42,13 +43,13 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true },
   password: String,
   profileImage: String, 
-  accountType: { type: String, enum: ['Student', 'University'] },
-  studentId: String,
-  major: String,
-  universityName: String,  
-  universityCode: String,  
-  universityAddress: String,
-  studentCount: Number,   
+  accountType: { type: String, enum: ['Student', 'University', 'Administrator'] }, // أضفنا Administrator هنا
+  studentId: { type: String, required: function() { return this.accountType === 'Student'; } },
+  major: { type: String, required: function() { return this.accountType === 'Student'; } },
+  universityName: { type: String, required: function() { return this.accountType === 'University'; } },  
+  universityCode: { type: String, required: function() { return this.accountType === 'University'; } },  
+  universityAddress: { type: String, required: function() { return this.accountType === 'University'; } },
+  studentCount: { type: String, required: function() { return this.accountType === 'University'; } },   
 });
 
 // نموذج OTP
@@ -68,6 +69,7 @@ const PropertySchema = new mongoose.Schema({
   profileImage: { type: String, required: true },
   ownerId: { type: String, required: true },
   hostelName: { type: String, required: true },
+  gender: { type: String, enum: ['Males', 'Females'], required: true },
   singleRooms: { type: Number, required: true }, // عدد الغرف الفردية
   sharedRooms: { type: Number, required: true }, // عدد الغرف المشتركة
   bedsPerSharedRoom: { type: Number, required: true }, // عدد الأسرة في الغرفة المشتركة
@@ -92,9 +94,12 @@ const PropertySchema = new mongoose.Schema({
   imageUrls: [{ type: String }], // روابط الصور
   singleRoomPrice: { type: Number, required: true }, // سعر الغرفة الفردية
   sharedRoomPrice: { type: Number, required: true }, // سعر الغرفة المشتركة
-  pricePeriod: { type: String, enum: ['day', 'month', 'semester'], required: true }, // فترة السعر
+  pricePeriod: { type: String, enum: ['day', 'month', 'term'], required: true }, // فترة السعر
   state: { type: String, required: true }, // الولاية
   index: { type: Number, default: 0 }, // الفهرس
+  averageRating: {type: Number,default: 0},
+  ratingCount: {type: Number,default: 0
+  }
 }, { timestamps: true });
 
 
@@ -438,6 +443,7 @@ app.post('/addProperty', async (req, res) => {
     sharedRoomPrice,
     pricePeriod,
     state,
+    gender,
   } = req.body;
 
   try {
@@ -477,6 +483,7 @@ app.post('/addProperty', async (req, res) => {
       sharedRoomPrice,
       pricePeriod,
       state,
+      gender,
     });
 
     await newProperty.save();
@@ -490,48 +497,41 @@ app.post('/addProperty', async (req, res) => {
 
 app.get('/getAllProperties', async (req, res) => {
   try {
-    // جلب جميع العقارات من قاعدة البيانات
     const properties = await Property.find({});
-
-    // تحويل البيانات إلى التنسيق المطلوب
     const formattedProperties = properties.map((property, index) => ({
       _id: property._id,
-      hostelName: property.hostelName, // استخدام hostelName بدلاً من type
-      pricePeriod: property.pricePeriod || 'N/A', // إرجاع الفترة الزمنية
-      singleRooms: parseFloat(property.singleRooms) || 0, // تحويل singleRooms إلى Double
-      sharedRooms: parseFloat(property.sharedRooms) || 0, // تحويل sharedRooms إلى Double
-      bedsPerSharedRoom: parseFloat(property.bedsPerSharedRoom) || 0, // تحويل bedsPerSharedRoom إلى Double
-      singleRoomPrice: parseFloat(property.singleRoomPrice) || 0, // تحويل singleRoomPrice إلى Double
-      sharedRoomPrice: parseFloat(property.sharedRoomPrice) || 0, // تحويل sharedRoomPrice إلى Double
-      index: index + 1, // استخدام الفهرس الذي يتم تمريره تلقائيًا في map
-      imageUrls: property.imageUrls || [], // استخدام أول صورة كصورة رئيسية
+      hostelName: property.hostelName || 'N/A',
+      pricePeriod: property.pricePeriod || 'N/A',
+      singleRooms: property.singleRooms ? parseFloat(property.singleRooms) : 0,
+      sharedRooms: property.sharedRooms ? parseFloat(property.sharedRooms) : 0,
+      bedsPerSharedRoom: property.bedsPerSharedRoom ? parseFloat(property.bedsPerSharedRoom) : 0,
+      singleRoomPrice: property.singleRoomPrice ? parseFloat(property.singleRoomPrice) : 0,
+      sharedRoomPrice: property.sharedRoomPrice ? parseFloat(property.sharedRoomPrice) : 0,
+      index: index + 1,
+      imageUrls: property.imageUrls || [],
       location: {
-        lat: parseFloat(property.location.lat), // تحويل lat إلى Double
-        lng: parseFloat(property.location.lng), // تحويل lng إلى Double
+        lat: property.location && property.location.lat ? parseFloat(property.location.lat) : 0.0,
+        lng: property.location && property.location.lng ? parseFloat(property.location.lng) : 0.0,
       },
-      ownerId: property.ownerId,
-      profileImage: property.profileImage,
-      bathroomType: property.bathroomType,
-      internetAvailable: property.internetAvailable,
-      cleaningService: property.cleaningService,
-      maintenanceService: property.maintenanceService,
-      securitySystem: property.securitySystem,
-      emergencyMeasures: property.emergencyMeasures,
-      goodLighting: property.goodLighting,
-      sharedAreas: property.sharedAreas,
-      studyRooms: property.studyRooms,
-      laundryRoom: property.laundryRoom,
-      sharedKitchen: property.sharedKitchen,
-      foodService: property.foodService,
-      effectiveManagement: property.effectiveManagement,
-      psychologicalSupport: property.psychologicalSupport,
-      state: property.state, // إضافة الولاية
+      ownerId: property.ownerId || '',
+      profileImage: property.profileImage || '',
+      bathroomType: property.bathroomType || 'N/A',
+      internetAvailable: property.internetAvailable || false,
+      cleaningService: property.cleaningService || false,
+      maintenanceService: property.maintenanceService || false,
+      securitySystem: property.securitySystem || false,
+      emergencyMeasures: property.emergencyMeasures || false,
+      goodLighting: property.goodLighting || false,
+      sharedAreas: property.sharedAreas || false,
+      studyRooms: property.studyRooms || false,
+      laundryRoom: property.laundryRoom || false,
+      sharedKitchen: property.sharedKitchen || false,
+      foodService: property.foodService || false,
+      effectiveManagement: property.effectiveManagement || false,
+      psychologicalSupport: property.psychologicalSupport || false,
+      state: property.state || 'N/A',
+      gender: property.gender || 'N/A',
     }));
-
-    // استخدام JSON.stringify لطباعة البيانات بشكل مفصل
-    console.log('Response Data:', JSON.stringify({ properties: formattedProperties }, null, 2));
-
-    // إرسال الاستجابة
     res.status(200).json({ properties: formattedProperties });
   } catch (error) {
     console.error('Error fetching properties:', error);
@@ -684,11 +684,11 @@ const Booking = mongoose.model('Booking', bookingSchema);
 
 // نقطة نهاية لتسجيل الحجز
 app.post('/submitBooking', async (req, res) => {
-  console.log(req.body); // طباعة البيانات المستلمة
   try {
     const {
       propertyId,
       ownerId,
+      userId,
       firstName,
       lastName,
       email,
@@ -699,19 +699,21 @@ app.post('/submitBooking', async (req, res) => {
     } = req.body;
 
     // التحقق من وجود جميع الحقول المطلوبة
-    if (!propertyId || !ownerId || !firstName || !lastName || !email || !phone || !roomType || !price || !pricePeriod) {
+    if (!propertyId || !ownerId || !userId || !firstName || !lastName || !email || !phone || !roomType || !price || !pricePeriod) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // التحقق من صحة رقم الهاتف (يمكن إضافة مكتبة مثل libphonenumber-js للتحقق من صحة الرقم)
-    if (!isValidPhoneNumber(phone)) {
-      return res.status(400).json({ message: 'Invalid phone number' });
+    // التحقق مما إذا كان الحجز موجودًا بالفعل
+    const existingBooking = await Booking.findOne({ userId, propertyId, roomType });
+    if (existingBooking) {
+      return res.status(400).json({ message: 'Booking already exists' });
     }
 
     // إنشاء حجز جديد
     const newBooking = new Booking({
       propertyId,
       ownerId,
+      userId,
       firstName,
       lastName,
       email,
@@ -723,6 +725,18 @@ app.post('/submitBooking', async (req, res) => {
 
     // حفظ الحجز في قاعدة البيانات
     await newBooking.save();
+
+    // تحديث عدد الغرف المتاحة
+    const updateResponse = await axios.post('http://192.168.1.15:3001/updateRoomAvailability', {
+      propertyId: propertyId,
+      roomType: roomType,
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (updateResponse.status !== 200) {
+      throw new Error('Failed to update room availability');
+    }
 
     // إرسال استجابة ناجحة
     res.status(201).json({ message: 'Booking submitted successfully', booking: newBooking });
@@ -782,9 +796,9 @@ app.get('/booking/:phone', async (req, res) => {
 app.get('/getPropertiesByOwner/:ownerId', async (req, res) => {
   try {
     const { ownerId } = req.params;
-
     // جلب العقارات الخاصة بالمستخدم
     const properties = await Property.find({ ownerId });
+    
 
     res.status(200).json({ properties });
   } catch (error) {
@@ -889,7 +903,22 @@ app.post('/process-payment', async (req, res) => {
 
 
 
+app.post('/checkExistingBooking', async (req, res) => {
+  const { userId, propertyId } = req.body;
 
+  try {
+    // البحث عن حجز سابق
+    const existingBooking = await Booking.findOne({ userId, propertyId });
+
+    if (existingBooking) {
+      res.status(200).json({ exists: true });
+    } else {
+      res.status(200).json({ exists: false });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.use(bodyParser.json());
 // نقطة نهاية لإنشاء PaymentIntent
@@ -922,26 +951,358 @@ app.post('/create-payment-intent', async (req, res) => {
   }
 });
 
+const ratingSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  property: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Property',
+    required: true
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5
+  },
+  comment: {
+    type: String,
+    maxlength: 500
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// نقاط النهاية للتقييمات
 app.post('/submitRating', async (req, res) => {
-  const { propertyId, userId, rating, comment } = req.body;
-
   try {
-    // التحقق من وجود العقار والمستخدم
-    const property = await Property.findById(propertyId);
-    const user = await User.findById(userId);
+    const { userId, propertyId, rating, comment } = req.body;
 
-    if (!property || !user) {
-      return res.status(404).json({ message: 'Property or user not found' });
+    // التحقق من وجود المستخدم
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'User not found. Please sign in to submit rating.' 
+      });
     }
 
-    // إضافة التقييم إلى العقار
-    property.ratings.push({ userId, rating, comment });
-    await property.save();
+    // التحقق من وجود العقار
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
+    }
 
-    res.status(201).json({ message: 'Rating submitted successfully' });
+    // التحقق من صحة التقييم
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Rating must be between 1 and 5' 
+      });
+    }
+
+    // التحقق من عدم وجود تقييم سابق
+    const existingRating = await Rating.findOne({ user: userId, property: propertyId });
+    if (existingRating) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'You have already rated this property' 
+      });
+    }
+
+    // إنشاء تقييم جديد
+    const newRating = new Rating({
+      user: userId,
+      property: propertyId,
+      rating: rating,
+      comment: comment || null
+    });
+
+    await newRating.save();
+
+    // حساب متوسط التقييمات الجديد
+    const ratings = await Rating.find({ property: propertyId });
+    const totalRatings = ratings.reduce((sum, r) => sum + r.rating, 0);
+    const averageRating = totalRatings / ratings.length;
+
+    // تحديث العقار بمتوسط التقييمات الجديد
+    await Property.findByIdAndUpdate(propertyId, { 
+      averageRating: averageRating,
+      ratingCount: ratings.length 
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: 'Rating submitted successfully',
+      averageRating: averageRating,
+      ratingCount: ratings.length
+    });
+
   } catch (error) {
     console.error('Error submitting rating:', error);
-    res.status(500).json({ message: 'Failed to submit rating', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/getPropertyRatings/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+
+    // التحقق من وجود العقار
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
+    }
+
+    // جلب التقييمات مع معلومات المستخدمين
+    const ratings = await Rating.find({ property: propertyId })
+      .populate('user', 'firstName lastName profileImage')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ 
+      success: true,
+      ratings: ratings,
+      averageRating: property.averageRating,
+      ratingCount: property.ratingCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching ratings:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/getUserRating/:userId/:propertyId', async (req, res) => {
+  try {
+    const { userId, propertyId } = req.params;
+
+    const rating = await Rating.findOne({ 
+      user: userId, 
+      property: propertyId 
+    });
+
+    if (!rating) {
+      return res.status(200).json({ 
+        success: true,
+        hasRated: false 
+      });
+    }
+
+    res.status(200).json({ 
+      success: true,
+      hasRated: true,
+      rating: rating.rating,
+      comment: rating.comment,
+      createdAt: rating.createdAt
+    });
+
+  } catch (error) {
+    console.error('Error fetching user rating:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});// نقاط النهاية للتقييمات
+app.post('/submitRating', async (req, res) => {
+  try {
+    const { userId, propertyId, rating, comment } = req.body;
+
+    // التحقق من وجود المستخدم
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'User not found. Please sign in to submit rating.' 
+      });
+    }
+
+    // التحقق من وجود العقار
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
+    }
+
+    // التحقق من صحة التقييم
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Rating must be between 1 and 5' 
+      });
+    }
+
+    // التحقق من عدم وجود تقييم سابق
+    const existingRating = await Rating.findOne({ user: userId, property: propertyId });
+    if (existingRating) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'You have already rated this property' 
+      });
+    }
+
+    // إنشاء تقييم جديد
+    const newRating = new Rating({
+      user: userId,
+      property: propertyId,
+      rating: rating,
+      comment: comment || null
+    });
+
+    await newRating.save();
+
+    // حساب متوسط التقييمات الجديد
+    const ratings = await Rating.find({ property: propertyId });
+    const totalRatings = ratings.reduce((sum, r) => sum + r.rating, 0);
+    const averageRating = totalRatings / ratings.length;
+
+    // تحديث العقار بمتوسط التقييمات الجديد
+    await Property.findByIdAndUpdate(propertyId, { 
+      averageRating: averageRating,
+      ratingCount: ratings.length 
+    });
+
+    res.status(200).json({ 
+      success: true,
+      message: 'Rating submitted successfully',
+      averageRating: averageRating,
+      ratingCount: ratings.length
+    });
+
+  } catch (error) {
+    console.error('Error submitting rating:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+const Rating = mongoose.model('Rating', ratingSchema);
+
+app.get('/getPropertyRatings/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+
+    // التحقق من وجود العقار
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
+    }
+
+    // جلب التقييمات مع معلومات المستخدمين
+    const ratings = await Rating.find({ property: propertyId })
+      .populate('user', 'firstName lastName profileImage')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ 
+      success: true,
+      ratings: ratings,
+      averageRating: property.averageRating,
+      ratingCount: property.ratingCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching ratings:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/getUserRating/:userId/:propertyId', async (req, res) => {
+  try {
+    const { userId, propertyId } = req.params;
+
+    const rating = await Rating.findOne({ 
+      user: userId, 
+      property: propertyId 
+    });
+
+    if (!rating) {
+      return res.status(200).json({ 
+        success: true,
+        hasRated: false 
+      });
+    }
+
+    res.status(200).json({ 
+      success: true,
+      hasRated: true,
+      rating: rating.rating,
+      comment: rating.comment,
+      createdAt: rating.createdAt
+    });
+
+  } catch (error) {
+    console.error('Error fetching user rating:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+
+
+app.get('/getPropertyRatings/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+
+    // التحقق من وجود العقار
+    const property = await Property.findById(propertyId);
+    if (!property) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
+    }
+
+    // جلب جميع التقييمات للعقار مع معلومات المستخدمين
+    const ratings = await Rating.find({ property: propertyId })
+      .populate('user', 'firstName lastName profileImage');
+
+    res.status(200).json({ 
+      success: true,
+      ratings: ratings,
+      averageRating: property.averageRating,
+      ratingCount: property.ratingCount
+    });
+
+  } catch (error) {
+    console.error('Error fetching ratings:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
@@ -1006,6 +1367,651 @@ app.post('/getNearbyProperties', async (req, res) => {
   }
 });
 
+
+app.post('/updateRoomAvailability', async (req, res) => {
+  const { propertyId, roomType } = req.body;
+
+  try {
+    // البحث عن العقار باستخدام propertyId
+    const property = await Property.findById(propertyId);
+
+    if (!property) {
+      return res.status(404).json({ message: 'Property not found' });
+    }
+
+    // تحديث عدد الغرف المتاحة بناءً على نوع الغرفة
+    if (roomType === 'Single') {
+      if (property.singleRooms > 0) {
+        property.singleRooms -= 1;
+      } else {
+        return res.status(400).json({ message: 'No single rooms available' });
+      }
+    } else if (roomType === 'Shared') {
+      if (property.sharedRooms > 0) {
+        property.sharedRooms -= 1;
+      } else {
+        return res.status(400).json({ message: 'No shared rooms available' });
+      }
+    } else {
+      return res.status(400).json({ message: 'Invalid room type' });
+    }
+
+    // حفظ التغييرات في قاعدة البيانات
+    await property.save();
+
+    res.status(200).json({ message: 'Room availability updated successfully', property });
+  } catch (error) {
+    console.error('Error updating room availability:', error);
+    res.status(500).json({ message: 'Failed to update room availability', error: error.message });
+  }
+});
+
+
+
+
+
+
+//الجزء الخاص بلوحة تحكم الادمن
+
+// **تسجيل دخول الادمن**
+app.post('/admin/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // التحقق من وجود البريد الإلكتروني وكلمة المرور
+    if (!email || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Email and password are required.',
+      });
+    }
+
+    // البحث عن المستخدم في قاعدة البيانات باستخدام البريد الإلكتروني
+    const user = await User.findOne({ email });
+
+    // التحقق مما إذا كان المستخدم موجودًا
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found. Please check your email or sign up.',
+      });
+    }
+
+    // التحقق من صحة كلمة المرور
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid password. Please try again.',
+      });
+    }
+
+    // التحقق مما إذا كان نوع الحساب هو "Administrator"
+    if (user.accountType !== 'Administrator') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Access denied. This account is not an Administrator.',
+      });
+    }
+
+    // إنشاء رمز JWT
+    const token = jwt.sign({ id: user._id }, 'your_jwt_secret_key', { expiresIn: '1h' });
+
+    // إرجاع بيانات المشرف مع الرمز
+    res.status(200).json({
+      status: 'success',
+      message: 'Admin login successful!',
+      token: token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        profileImage: user.profileImage,
+        accountType: user.accountType,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while logging in.',
+      error: error.message,
+    });
+  }
+});
+
+//(1) نقطة النهاية لجلب جميع المستخدمين
+app.get('/getAllUsers', async (req, res) => {
+  try {
+    // جلب جميع المستخدمين من قاعدة البيانات
+    const users = await User.find({});
+
+    // التحقق مما إذا كانت هناك مستخدمين
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No users found',
+      });
+    }
+
+    // تحويل البيانات إلى التنسيق المطلوب
+    const formattedUsers = users.map((user) => ({
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      profileImage: user.profileImage || 'https://via.placeholder.com/50', // صورة افتراضية إذا لم تكن موجودة
+      accountType: user.accountType,
+      studentId: user.accountType === 'Student' ? user.studentId : null,
+      major: user.accountType === 'Student' ? user.major : null,
+      universityName: user.accountType === 'University' ? user.universityName : null,
+      universityCode: user.accountType === 'University' ? user.universityCode : null,
+      universityAddress: user.accountType === 'University' ? user.universityAddress : null,
+      studentCount: user.accountType === 'University' ? user.studentCount : null,
+    }));
+
+    // إرسال الاستجابة
+    res.status(200).json({
+      success: true,
+      message: 'Users fetched successfully',
+      users: formattedUsers,
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message,
+    });
+  }
+});
+
+//(3)Notifications schema:
+const notificationSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+  },
+  description: {
+    type: String,
+    required: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
+module.exports = Notification;
+
+//(3.1)getAllNotifcations
+app.get('/notifications', async (req, res) => {
+  try {
+    const notifications = await Notification.find({}).sort({ createdAt: -1 }); // ترتيب حسب الأحدث
+    res.status(200).json({
+      success: true,
+      message: 'Notifications fetched successfully',
+      data: notifications,
+    });
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications',
+      error: error.message,
+    });
+  }
+});
+
+//(3.2)Add Notifications:
+app.post('/notifications', async (req, res) => {
+  try {
+    const { title, description } = req.body;
+
+    if (!title || !description) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and description are required',
+      });
+    }
+
+    const newNotification = new Notification({
+      title,
+      description,
+    });
+
+    await newNotification.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Notification added successfully',
+      data: newNotification,
+    });
+  } catch (error) {
+    console.error('Error adding notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add notification',
+      error: error.message,
+    });
+  }
+});
+
+//(3.3) Delet Notifications
+app.delete('/notifications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Notification.findByIdAndDelete(id);
+    res.status(200).json({ message: 'Notification deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    res.status(500).json({ message: 'Failed to delete notification' });
+  }
+});
+
+
+//(3.4)Resend Notifications
+app.post('/notifications/:id/resend', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findById(id);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    // هنا يمكن تنفيذ عملية إعادة الإرسال (مثل البريد الإلكتروني أو الإشعارات)
+    console.log(`Resending notification: ${notification.title}`);
+    res.status(200).json({ message: 'Notification resent successfully' });
+  } catch (error) {
+    console.error('Error resending notification:', error);
+    res.status(500).json({ message: 'Failed to resend notification' });
+  }
+});
+
+
+//(3.5)edit Notifications
+app.put('/notifications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description } = req.body;
+    const updatedNotification = await Notification.findByIdAndUpdate(
+      id,
+      { title, description },
+      { new: true }
+    );
+    if (!updatedNotification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    res.status(200).json({ message: 'Notification updated successfully', data: updatedNotification });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    res.status(500).json({ message: 'Failed to update notification' });
+  }
+});
+
+
+
+app.post('/saveMessage', async (req, res) => {
+  const { userId, firstName, lastName, email, accountType, profileImage, subject, message } = req.body;
+
+  try {
+    // التحقق من وجود جميع الحقول المطلوبة
+    if (!userId || !firstName || !lastName || !email || !accountType || !subject || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required',
+      });
+    }
+
+    // التحقق من صحة userId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid userId',
+      });
+    }
+
+    // البحث عن المستخدم بناءً على userId
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // تحديد بيانات المستقبل يدويًا
+    const recipientId = '67fa9e5998eac616535ac1cc';
+    const recipientEmail = 'hymaha@cyclelove.cc';
+    const recipientAccountType = 'Administrator';
+
+    // التحقق من وجود المستقبل في قاعدة البيانات
+    const recipientUser = await User.findById(recipientId);
+    if (!recipientUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient user not found',
+      });
+    }
+
+    // إنشاء رسالة جديدة
+    const newMessage = new SupportMessage({
+      sender: user._id, // المرسل هو المستخدم الحالي
+      recipient: recipientId, // المستقبل هو المستخدم المحدد
+      subject: subject, // الموضوع
+      message: message, // الرسالة
+      senderDetails: {
+        firstName: firstName,
+        lastName: lastName,
+        email: email,
+        accountType: accountType,
+        profileImage: profileImage || '', // إذا لم تكن صورة الملف الشخصي موجودة، نستخدم قيمة فارغة
+      },
+    });
+
+    // حفظ الرسالة في قاعدة البيانات
+    await newMessage.save();
+
+    // إرجاع استجابة ناجحة
+    res.status(201).json({
+      success: true,
+      message: 'Message saved successfully',
+      recipient: {
+        _id: recipientId,
+        email: recipientEmail,
+        accountType: recipientAccountType,
+      },
+    });
+  } catch (error) {
+    console.error('Error saving message:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save message',
+      error: error.message,
+    });
+  }
+});
+
+//(4)Support schema:
+const supportMessageSchema = new mongoose.Schema({
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  recipient: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  subject: {
+    type: String,
+    required: true,
+  },
+  message: {
+    type: String,
+    required: true,
+  },
+  replies: [
+    {
+      replyText: String,
+      repliedBy: String,
+      repliedAt: Date,
+    },
+  ],
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+
+
+// نموذج الرسائل الداعمة
+const SupportMessage = mongoose.model('SupportMessage', supportMessageSchema);
+
+module.exports = SupportMessage;
+
+//(4.1) add Support message:
+app.post('/supportmessages', async (req, res) => {
+  try {
+    const {
+      senderId,
+      recipientId,
+      subject,
+      message,
+      firstName,
+      lastName,
+      email,
+      accountType,
+      profileImage,
+    } = req.body;
+
+    // التحقق من وجود جميع الحقول المطلوبة
+    if (!senderId || !recipientId || !subject || !message || !firstName || !lastName || !email || !accountType) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields (senderId, recipientId, subject, message, firstName, lastName, email, accountType) are required',
+      });
+    }
+
+    // التحقق من صحة senderId و recipientId
+    if (!mongoose.Types.ObjectId.isValid(senderId) || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid senderId or recipientId',
+      });
+    }
+
+    // التحقق من وجود المرسل والمستقبل في قاعدة البيانات
+    const senderUser = await User.findById(senderId);
+    const recipientUser = await User.findById(recipientId);
+
+    if (!senderUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sender user not found',
+      });
+    }
+
+    if (!recipientUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient user not found',
+      });
+    }
+
+    // إنشاء رسالة جديدة
+    const newMessage = new SupportMessage({
+      sender: senderId,
+      recipient: recipientId,
+      subject,
+      message,
+      senderDetails: {
+        firstName,
+        lastName,
+        email,
+        accountType,
+        profileImage: profileImage || '', // إذا لم تكن صورة الملف الشخصي موجودة، نستخدم قيمة فارغة
+      },
+    });
+
+    // حفظ الرسالة في قاعدة البيانات
+    await newMessage.save();
+
+    // إرجاع استجابة ناجحة
+    res.status(201).json({
+      success: true,
+      message: 'Support message added successfully',
+      data: newMessage,
+    });
+  } catch (error) {
+    console.error('Error adding support message:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add support message',
+      error: error.message,
+    });
+  }
+});
+
+app.get('/support', async (req, res) => {
+  try {
+    // جلب جميع الرسائل مع ترتيبها حسب الأحدث
+    const messages = await SupportMessage.find({})
+      .populate('sender', '_id firstName lastName email accountType profileImage') // تحميل بيانات المرسل
+      .populate('recipient', '_id firstName lastName email accountType profileImage') // تحميل بيانات المستقبل
+      .sort({ createdAt: -1 }); // ترتيب الرسائل حسب الأحدث
+
+    // التحقق مما إذا كانت هناك رسائل
+    if (messages.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No support messages found',
+      });
+    }
+
+    // تحويل الرسائل إلى تنسيق مناسب للواجهة الأمامية
+    const formattedMessages = messages.map((message) => ({
+      _id: message._id,
+      sender: message.sender ? {
+        _id: message.sender._id,
+        firstName: message.sender.firstName,
+        lastName: message.sender.lastName,
+        email: message.sender.email,
+        accountType: message.sender.accountType,
+        profileImage: message.sender.profileImage || '',
+      } : null,
+      recipient: message.recipient ? {
+        _id: message.recipient._id,
+        firstName: message.recipient.firstName,
+        lastName: message.recipient.lastName,
+        email: message.recipient.email,
+        accountType: message.recipient.accountType,
+        profileImage: message.recipient.profileImage || '',
+      } : null,
+      subject: message.subject,
+      message: message.message,
+      replies: message.replies.map((reply) => ({
+        replyText: reply.replyText,
+        repliedBy: reply.repliedBy,
+        repliedAt: reply.repliedAt,
+      })),
+      createdAt: message.createdAt,
+    }));
+
+    // إرجاع استجابة ناجحة مع الرسائل
+    res.status(200).json({
+      success: true,
+      message: 'Support messages fetched successfully',
+      data: formattedMessages,
+    });
+  } catch (error) {
+    console.error('Error fetching support messages:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch support messages',
+      error: error.message,
+    });
+  }
+});
+
+
+
+//(4.1) delet Support message:
+app.delete('/support/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // حذف الرسالة بناءً على ID
+    const deletedMessage = await SupportMessage.findByIdAndDelete(id);
+
+    if (!deletedMessage) {
+      return res.status(404).json({
+        success: false,
+        message: 'Support message not found',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Support message deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting support message:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete support message',
+      error: error.message,
+    });
+  }
+});
+
+
+//(4.2)replay message:
+app.post('/support/:messageId/reply', async (req, res) => {
+  const { messageId } = req.params;
+  const { reply } = req.body;
+  try {
+    // العثور على الرسالة باستخدام messageId
+    const message = await SupportMessage.findById(messageId); // استبدال Message بـ SupportMessage
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    // إضافة الرد إلى قائمة الردود
+    message.replies.push({
+      replyText: reply,
+      repliedBy: 'Admin',
+      repliedAt: new Date(),
+    });
+
+    // حفظ التحديثات
+    await message.save();
+
+    // إعادة استجابة ناجحة
+    res.status(200).json({ message: 'Reply sent successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to send reply' });
+  }
+});
+
+//(4.3)get messages by userId:
+app.get('/user-messages/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    // البحث عن جميع الرسائل المرتبطة بالمستخدم
+    const messages = await SupportMessage.find({ 'sender':userId })
+      .populate('replies') // تحميل الردود المرتبطة بالرسائل
+      .exec();
+
+    if (!messages || messages.length === 0) {
+      return res.status(404).json({ error: 'No messages found for this user' });
+    }
+
+    res.status(200).json({ data: messages });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch user messages' });
+  }
+});
+
+// تحديث الرسائل القديمة
+async function updateOldMessages() {
+  try {
+    const result = await SupportMessage.updateMany(
+      { replies: { $exists: false } },
+      { $set: { replies: [] } }
+    );
+    console.log(`Updated ${result.modifiedCount} messages`);
+  } catch (error) {
+    console.error('Error updating old messages:', error);
+  }
+}
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
