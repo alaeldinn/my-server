@@ -2014,30 +2014,10 @@ async function updateOldMessages() {
 }
 
 
-
-
-const blockedUserSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // إشارة إلى نموذج المستخدم الأساسي
-    required: true,
-  },
-  reason: {
-    type: String,
-    default: 'No reason provided',
-  },
-  blockedAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-const BlockedUser = mongoose.model('BlockedUser', blockedUserSchema);
-module.exports = BlockedUser;
-
-app.post('/blockUser/:userId', async (req, res) => {
+// حذف مستخدم بناءً على ID
+app.delete('/deleteUser/:id', async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.params.id;
 
     // التحقق من وجود المستخدم
     const user = await User.findById(userId);
@@ -2045,72 +2025,17 @@ app.post('/blockUser/:userId', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // التحقق مما إذا كان المستخدم محظورًا بالفعل
-    const alreadyBlocked = await BlockedUser.findOne({ userId });
-    if (alreadyBlocked) {
-      return res.status(400).json({ message: 'User is already blocked' });
-    }
+    // حذف المستخدم
+    await User.findByIdAndDelete(userId);
 
-    // إضافة المستخدم إلى قائمة الحظر
-    const blockedUser = new BlockedUser({
-      userId: user._id,
-      reason: req.body.reason || 'No reason provided',
-    });
-
-    await blockedUser.save();
-
-    // تعديل حالة المستخدم لتجميد الحساب
-    user.isBlocked = true; // افترض أن لديك حقل `isBlocked` في نموذج المستخدم
-    await user.save();
-
-    res.status(200).json({ message: 'User has been blocked successfully' });
+    res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.post('/unblockUser/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    // التحقق من وجود المستخدم
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // التحقق مما إذا كان المستخدم موجودًا في قائمة الحظر
-    const blockedUser = await BlockedUser.findOne({ userId });
-    if (!blockedUser) {
-      return res.status(400).json({ message: 'User is not blocked' });
-    }
-
-    // إزالة المستخدم من قائمة الحظر
-    await BlockedUser.deleteOne({ userId });
-
-    // تعديل حالة المستخدم لفك تجميد الحساب
-    user.isBlocked = false; // افترض أن لديك حقل `isBlocked` في نموذج المستخدم
-    await user.save();
-
-    res.status(200).json({ message: 'User has been unblocked successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
 
-app.get('/getBlockedUsers', async (req, res) => {
-  try {
-    // جلب جميع المستخدمين المحظورين مع معلوماتهم
-    const blockedUsers = await BlockedUser.find().populate('userId');
-    res.status(200).json({ blockedUsers });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
