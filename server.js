@@ -753,40 +753,47 @@ function isValidPhoneNumber(phone) {
 }
 
 
-app.get('/booking/:phone', async (req, res) => {
+// جلب بيانات الحجز بناءً على propertyId
+app.get('/bookings/property/:propertyId', async (req, res) => {
   try {
-    const { phone } = req.params;
+    const { propertyId } = req.params;
 
-    // البحث عن الحجز باستخدام رقم الهاتف (phone) وجلب بيانات العقار المرتبط
-    const booking = await Booking.findOne({ phone }).populate('propertyId');
+    // البحث عن جميع الحجوزات المرتبطة بالعقار
+    const bookings = await Booking.find({ propertyId }).populate('propertyId');
 
-    if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+    if (!bookings || bookings.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No bookings found for this property',
+      });
     }
 
-    // تحويل propertyId إلى S/N
-    const serialNumber = booking.propertyId._id.toString().substring(0, 6).toUpperCase();
+    // تحويل البيانات لعرضها بسهولة في التطبيق
+    const formattedBookings = bookings.map(booking => ({
+      _id: booking._id,
+      firstName: booking.firstName,
+      lastName: booking.lastName,
+      email: booking.email,
+      phone: booking.phone,
+      roomType: booking.roomType,
+      price: booking.price,
+      pricePeriod: booking.pricePeriod,
+      bookingDate: booking.bookingDate,
+      ownerId: booking.ownerId,
+    }));
 
-    // إرسال البيانات المطلوبة
     res.status(200).json({
-      bookingDate: booking.bookingDate.toLocaleString(), // تاريخ الحجز
-      firstName: booking.firstName, // الاسم الأول
-      lastName: booking.lastName, // الاسم الأخير
-      email: booking.email, // البريد الإلكتروني
-      phone: booking.phone, // رقم الهاتف
-      roomType: booking.roomType, // نوع الغرفة
-      price: booking.price, // السعر
-      pricePeriod: booking.pricePeriod, // الفترة الزمنية
-      serialNumber, // الرقم التسلسلي (S/N)
-      property: {
-        hostelName: booking.propertyId.hostelName, // اسم العقار
-        location: booking.propertyId.location, // موقع العقار
-        imageUrls: booking.propertyId.imageUrls, // صور العقار
-      },
+      status: 'success',
+      bookings: formattedBookings,
     });
+
   } catch (error) {
-    console.error('Error fetching booking details:', error);
-    res.status(500).json({ message: 'Failed to fetch booking details', error: error.message });
+    console.error('Error fetching booking details by propertyId:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch booking details',
+      error: error.message,
+    });
   }
 });
 
