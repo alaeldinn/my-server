@@ -902,6 +902,36 @@ res.status(200).json({
   }
 });
 
+
+app.get('/bookings/property/:propertyId', async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+
+    // جلب الحجوزات بناءً على propertyId
+    const bookings = await Booking.find({ propertyId }).populate('userId', 'firstName lastName email');
+
+    if (!bookings || bookings.length === 0) {
+      return res.status(200).json({
+        success: true,
+        bookings: [],
+        message: 'لا توجد حجوزات لهذا العقار'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      bookings: bookings
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب الحجوزات:', error);
+    res.status(500).json({
+      success: false,
+      error: 'فشل في جلب الحجوزات'
+    });
+  }
+});
+
 // دالة للتحقق من صحة رقم الهاتف (يمكن استبدالها بمكتبة مثل libphonenumber-js)
 function isValidPhoneNumber(phone) {
   // يمكن إضافة منطق للتحقق من صحة الرقم بناءً على رمز الدولة
