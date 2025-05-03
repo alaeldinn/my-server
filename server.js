@@ -10,6 +10,7 @@ const { Decimal128 } = require('mongodb');
 const nodemailer = require('nodemailer');
 const braintree = require('braintree');
 const bodyParser = require('body-parser'); // استيراد body-parser
+const pdfCreator = require('pdf-creator-node');
 const app = express();
 const axios = require('axios');
 const stripe = require('stripe')('sk_test_51QfmCJKwGdbDTqjONl2F5gSRpVuTE4NEsfeuHYMnex8SRAu0uIex8PqpCBoXkJDyTMx9WfMsPoMX0T3QzdTmv6aQ00fLzBugFe');
@@ -668,81 +669,236 @@ app.post('/getLocationRecommendations', async (req, res) => {
 
 // نموذج الحجز
 const bookingSchema = new mongoose.Schema({
-  propertyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Property', required: true }, // معرف العقار
-  ownerId: { type: String, required: true }, // معرف المالك
-  firstName: { type: String, required: true }, // الاسم الأول للطالب
-  lastName: { type: String, required: true }, // الاسم الأخير للطالب
-  email: { type: String, required: true }, // البريد الإلكتروني للطالب
-  phone: { type: String, required: true }, // رقم الهاتف للطالب
-  roomType: { type: String, required: true, enum: ['Single', 'Shared'] }, // نوع الغرفة
-  price: { type: Number, required: true }, // سعر العقار
-  pricePeriod: { type: String, required: true }, // الفترة الزمنية للسعر
-  bookingDate: { type: Date, default: Date.now }, // تاريخ الحجز
+  propertyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Property',
+    required: true,
+  },
+  ownerId: {
+    type: String,
+    required: true,
+  },
+  userId: {
+    type: String,
+    default: null,
+  },
+  firstName: {
+    type: String,
+    required: true,
+  },
+  lastName: {
+    type: String,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+  },
+  phone: {
+    type: String,
+    required: true,
+  },
+  roomType: {
+    type: String,
+    enum: ['Single', 'Shared'],
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+  },
+  pricePeriod: {
+    type: String,
+    required: true,
+  },
+  transactionId: {
+    type: String,
+    default: () => 'TRX-' + Date.now().toString(),
+  },
+  receiptUrl: {
+    type: String,
+    default: function () {
+      return '/receipt/' + this._id;
+    },
+  },
+  qrCodeUrl: {
+    type: String,
+    default: function () {
+      return '/qrcode/' + this._id;
+    },
+  },
+  bookingDate: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 const Booking = mongoose.model('Booking', bookingSchema);
 
-// نقطة نهاية لتسجيل الحجز
-app.post('/submitBooking', async (req, res) => {
+//⚙️ دالة لتوليد الإيصال بصيغة PDF
+function generateReceipt(data) {
+  const html = `
+    <h1>E-Receipt</h1>
+    <p><strong>Transaction ID:</strong> ${data.transactionId}</p>
+    <p><strong>Property Name:</strong> ${data.propertyName}</p>
+    <p><strong>User:</strong> ${data.fullName}</p>
+    <p><strong>Room Type:</strong> ${data.roomType}</p>
+    <p><strong>Price:</strong> ${data.price} SDG</p>
+    <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+  `;
+
+  const options = {
+    format: 'A4',
+  };
+
+  const document = {
+    html: html,
+    data: {},
+    path: false, // لن نحفظ الملف
+  };
+
+  return pdfCreator.create(document, options);
+}
+
+//⚙️ دالة لتوليد QR Code
+
+const QRCode = require('qrcode');
+
+
+app.get('/receipt/:bookingId', async (req, res) => {
   try {
-    const {
-      propertyId,
-      ownerId,
-      userId,
-      firstName,
-      lastName,
-      email,
-      phone,
-      roomType,
-      price,
-      pricePeriod,
-    } = req.body;
+    const { bookingId } = req.params;
 
-    // التحقق من وجود جميع الحقول المطلوبة
-    if (!propertyId || !ownerId || !userId || !firstName || !lastName || !email || !phone || !roomType || !price || !pricePeriod) {
-      return res.status(400).json({ message: 'All fields are required' });
+    // جلب بيانات الحجز من قاعدة البيانات
+    const Booking = mongoose.model('Booking');
+    const booking = await Booking.findById(bookingId).populate('propertyId');
+
+    if (!booking || !booking.propertyId) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
-    // التحقق مما إذا كان الحجز موجودًا بالفعل
-    const existingBooking = await Booking.findOne({ userId, propertyId, roomType });
-    if (existingBooking) {
-      return res.status(400).json({ message: 'Booking already exists' });
-    }
+    const property = booking.propertyId;
 
-    // إنشاء حجز جديد
-    const newBooking = new Booking({
-      propertyId,
-      ownerId,
-      userId,
-      firstName,
-      lastName,
-      email,
-      phone,
-      roomType,
-      price,
-      pricePeriod,
+    // توليد الإيصال مباشرة بدون حفظ
+    const pdfData = await generateReceipt({
+      propertyName: property.hostelName,
+      fullName: `${booking.firstName} ${booking.lastName}`,
+      roomType: booking.roomType,
+      price: booking.roomType === 'Single' ? property.singleRoomPrice : property.sharedRoomPrice,
+      transactionId: booking.transactionId,
     });
 
-    // حفظ الحجز في قاعدة البيانات
+    // ضبط الرؤوس لإرسال PDF كملف قابل للتنزيل
+    res.header('Content-Type', 'application/pdf');
+    res.header('Content-Disposition', `attachment; filename=receipt_${booking.transactionId}.pdf`);
+    res.send(pdfData.pdfBuffer);
+  } catch (error) {
+    console.error('Error generating receipt:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate receipt' });
+  }
+});
+
+
+app.get('/qrcode/:bookingId', async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    // جلب بيانات الحجز من قاعدة البيانات
+    const Booking = mongoose.model('Booking');
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    // توليد QR Code كـ Base64
+    const qrCode = await generateQrCode({
+      transactionId: booking.transactionId,
+    });
+
+    // استخراج Base64 من Data URL
+    const base64Data = qrCode.replace(/^data:image\/png;base64,/, '');
+
+    // إرسال الصورة كـ PNG
+    res.contentType('image/png');
+    res.send(Buffer.from(base64Data, 'base64'));
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate QR code' });
+  }
+});
+
+async function generateQrCode(data) {
+  return await QRCode.toDataURL(data.transactionId); // تحويل ID إلى Base64 QR
+}
+
+// نقطة نهاية لتسجيل الحجز
+app.post('/bookings', async (req, res) => {
+  const {
+    propertyId,
+    ownerId,
+    userId,
+    firstName,
+    lastName,
+    email,
+    phone,
+    roomType,
+    price,
+    pricePeriod,
+  } = req.body;
+    try {
+    const Property = mongoose.model('Property');
+    const property = await Property.findById(propertyId);
+
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    if (roomType === 'Single' && property.singleRooms <= 0) {
+      return res.status(400).json({ success: false, message: 'No single rooms available' });
+    }
+    if (roomType === 'Shared' && property.sharedRooms <= 0) {
+      return res.status(400).json({ success: false, message: 'No shared rooms available' });
+    }
+
+    if (roomType === 'Single') property.singleRooms -= 1;
+    else if (roomType === 'Shared') property.sharedRooms -= 1;
+
+    await property.save();
+
+    const Booking = mongoose.model('Booking');
+
+  const newBooking = new Booking({
+  propertyId,
+  ownerId,
+  userId,
+  firstName,
+  lastName,
+  email,
+  phone,
+  roomType,
+  price,
+  pricePeriod,
+});
+
     await newBooking.save();
 
-    // تحديث عدد الغرف المتاحة
-    const updateResponse = await axios.post('http://192.168.1.15:3001/updateRoomAvailability', {
-      propertyId: propertyId,
-      roomType: roomType,
-    }, {
-      headers: { 'Content-Type': 'application/json' },
-    });
 
-    if (updateResponse.status !== 200) {
-      throw new Error('Failed to update room availability');
-    }
 
-    // إرسال استجابة ناجحة
-    res.status(201).json({ message: 'Booking submitted successfully', booking: newBooking });
+res.status(200).json({
+  success: true,
+  message: 'Booking successful',
+  booking: {
+    ...newBooking._doc,
+    propertyName: property?.hostelName || 'Unknown Property',
+    receiptUrl: `/receipt/${newBooking._id}`,
+    qrCodeUrl: `/qrcode/${newBooking._id}`,
+  },
+});
+
   } catch (error) {
-    console.error('Error submitting booking:', error);
-    res.status(500).json({ message: 'Failed to submit booking', error: error.message });
+    console.error('Error booking property:', error);
+    res.status(500).json({ success: false, message: 'Failed to book property' });
   }
 });
 
@@ -753,47 +909,30 @@ function isValidPhoneNumber(phone) {
 }
 
 
-// جلب بيانات الحجز بناءً على propertyId
-app.get('/bookings/property/:propertyId', async (req, res) => {
+app.get('/getProperty/:propertyId', async (req, res) => {
   try {
     const { propertyId } = req.params;
-
-    // البحث عن جميع الحجوزات المرتبطة بالعقار
-    const bookings = await Booking.find({ propertyId }).populate('propertyId');
-
-    if (!bookings || bookings.length === 0) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'No bookings found for this property',
-      });
+    const property = await Property.findById(propertyId);
+    
+    if (!property) {
+      return res.status(404).json({ success: false, error: 'Property not found' });
     }
 
-    // تحويل البيانات لعرضها بسهولة في التطبيق
-    const formattedBookings = bookings.map(booking => ({
-      _id: booking._id,
-      firstName: booking.firstName,
-      lastName: booking.lastName,
-      email: booking.email,
-      phone: booking.phone,
-      roomType: booking.roomType,
-      price: booking.price,
-      pricePeriod: booking.pricePeriod,
-      bookingDate: booking.bookingDate,
-      ownerId: booking.ownerId,
-    }));
-
     res.status(200).json({
-      status: 'success',
-      bookings: formattedBookings,
+      success: true,
+      property: {
+        _id: property._id,
+        hostelName: property.hostelName,
+        location: property.location,
+        singleRoomPrice: property.singleRoomPrice,
+        sharedRoomPrice: property.sharedRoomPrice,
+        imageUrls: property.imageUrls,
+      },
     });
 
   } catch (error) {
-    console.error('Error fetching booking details by propertyId:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch booking details',
-      error: error.message,
-    });
+    console.error('Error fetching property details:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch property details' });
   }
 });
 
