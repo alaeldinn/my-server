@@ -863,49 +863,49 @@ app.post('/bookings', async (req, res) => {
 
     await newBooking.save();
 
+    // ✅ توليد الإيصال أولاً وحفظه في متغير
+    const receiptData = await generateReceipt({
+      propertyName: property.hostelName,
+      fullName: `${newBooking.firstName} ${newBooking.lastName}`,
+      roomType: newBooking.roomType,
+      price: newBooking.price,
+      transactionId: newBooking.transactionId,
+    });
 
-    // ✅ رفع PDF إلى Cloudinary داخل فولدر Transactions/{bookingId}
-const folderPath = `Transactions/${newBooking._id}`; // 👈 الفولدر الجديد
+    // ✅ الآن استخدم receiptData.pdfBuffer لرفع الملف
+    const folderPath = `Transactions/${newBooking._id}`;
 
-const cloudinaryResult = await new Promise((resolve, reject) => {
-  const uploadStream = cloudinary.uploader.upload_stream(
-    {
-      folder: folderPath,
-      public_id: `receipt_${newBooking.transactionId}`,
-      resource_type: "raw",
-      use_filename: true,
-      unique_filename: false,
-    },
-    (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    }
-  );
-  uploadStream.end(receiptData.pdfBuffer); // 👈 رفع PDF Buffer مباشرة
-});
+    const cloudinaryResult = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: folderPath,
+          public_id: `receipt_${newBooking.transactionId}`,
+          resource_type: "raw",
+          use_filename: true,
+          unique_filename: false,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+      uploadStream.end(receiptData.pdfBuffer); // ✅ تم تعريف receiptData مسبقًا
+    });
 
-// ✨ توليد PDF للإيصال
-const receiptData = await generateReceipt({
-  propertyName: property.hostelName,
-  fullName: `${newBooking.firstName} ${newBooking.lastName}`,
-  roomType: newBooking.roomType,
-  price: newBooking.price,
-  transactionId: newBooking.transactionId,
-});
+    // ✅ تحديث الحجز برابط الإيصال
+    newBooking.receiptUrl = cloudinaryResult.secure_url;
+    await newBooking.save();
 
-// ✅ تحديث الحجز برابط الإيصال من Cloudinary
-newBooking.receiptUrl = cloudinaryResult.secure_url;
-await newBooking.save();
+    res.status(200).json({
+      success: true,
+      message: 'Booking successful',
+      booking: {
+        ...newBooking._doc,
+        receiptUrl: cloudinaryResult.secure_url,
+        qrCodeUrl: `/qrcode/${newBooking._id}`,
+      },
+    });
 
-res.status(200).json({
-  success: true,
-  message: 'Booking successful',
-  booking: {
-    ...newBooking._doc,
-    receiptUrl: cloudinaryResult.secure_url,
-    qrCodeUrl: `/qrcode/${newBooking._id}`,
-  },
-});
   } catch (error) {
     console.error('Error booking property:', error);
     res.status(500).json({ success: false, message: 'Failed to book property' });
