@@ -11,6 +11,7 @@ const nodemailer = require('nodemailer');
 const braintree = require('braintree');
 const bodyParser = require('body-parser'); // استيراد body-parser
 const pdfCreator = require('pdf-creator-node');
+const fs = require('fs');
 const app = express();
 const axios = require('axios');
 const stripe = require('stripe')('sk_test_51QfmCJKwGdbDTqjONl2F5gSRpVuTE4NEsfeuHYMnex8SRAu0uIex8PqpCBoXkJDyTMx9WfMsPoMX0T3QzdTmv6aQ00fLzBugFe');
@@ -736,6 +737,7 @@ const bookingSchema = new mongoose.Schema({
 const Booking = mongoose.model('Booking', bookingSchema);
 
 //⚙️ دالة لتوليد الإيصال بصيغة PDF
+
 function generateReceipt(data) {
   const html = `
     <h1>E-Receipt</h1>
@@ -746,17 +748,14 @@ function generateReceipt(data) {
     <p><strong>Price:</strong> ${data.price} SDG</p>
     <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
   `;
-
   const options = {
     format: 'A4',
   };
-
   const document = {
     html: html,
     data: {},
-    path: false, // لن نحفظ الملف
+    path: false,
   };
-
   return pdfCreator.create(document, options);
 }
 
@@ -768,33 +767,16 @@ const QRCode = require('qrcode');
 app.get('/receipt/:bookingId', async (req, res) => {
   try {
     const { bookingId } = req.params;
-
-    // جلب بيانات الحجز من قاعدة البيانات
-    const Booking = mongoose.model('Booking');
-    const booking = await Booking.findById(bookingId).populate('propertyId');
-
-    if (!booking || !booking.propertyId) {
-      return res.status(404).json({ success: false, message: 'Booking not found' });
+    const booking = await Booking.findById(bookingId);
+    if (!booking || !booking.receiptUrl) {
+      return res.status(404).json({ success: false, message: 'Receipt not found' });
     }
 
-    const property = booking.propertyId;
-
-    // توليد الإيصال مباشرة بدون حفظ
-    const pdfData = await generateReceipt({
-      propertyName: property.hostelName,
-      fullName: `${booking.firstName} ${booking.lastName}`,
-      roomType: booking.roomType,
-      price: booking.roomType === 'Single' ? property.singleRoomPrice : property.sharedRoomPrice,
-      transactionId: booking.transactionId,
-    });
-
-    // ضبط الرؤوس لإرسال PDF كملف قابل للتنزيل
-    res.header('Content-Type', 'application/pdf');
-    res.header('Content-Disposition', `attachment; filename=receipt_${booking.transactionId}.pdf`);
-    res.send(pdfData.pdfBuffer);
+    // إعادة توجيه المستخدم إلى رابط PDF في Cloudinary
+    res.redirect(booking.receiptUrl);
   } catch (error) {
-    console.error('Error generating receipt:', error);
-    res.status(500).json({ success: false, message: 'Failed to generate receipt' });
+    console.error('Error fetching receipt:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch receipt' });
   }
 });
 
@@ -846,10 +828,10 @@ app.post('/bookings', async (req, res) => {
     price,
     pricePeriod,
   } = req.body;
-    try {
+
+  try {
     const Property = mongoose.model('Property');
     const property = await Property.findById(propertyId);
-
     if (!property) {
       return res.status(404).json({ success: false, message: 'Property not found' });
     }
@@ -863,39 +845,67 @@ app.post('/bookings', async (req, res) => {
 
     if (roomType === 'Single') property.singleRooms -= 1;
     else if (roomType === 'Shared') property.sharedRooms -= 1;
-
     await property.save();
 
     const Booking = mongoose.model('Booking');
-
-  const newBooking = new Booking({
-  propertyId,
-  ownerId,
-  userId,
-  firstName,
-  lastName,
-  email,
-  phone,
-  roomType,
-  price,
-  pricePeriod,
-});
+    const newBooking = new Booking({
+      propertyId,
+      ownerId,
+      userId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      roomType,
+      price,
+      pricePeriod,
+    });
 
     await newBooking.save();
 
 
+    // ✅ رفع PDF إلى Cloudinary داخل فولدر Transactions/{bookingId}
+const folderPath = `Transactions/${newBooking._id}`; // 👈 الفولدر الجديد
+
+const cloudinaryResult = await new Promise((resolve, reject) => {
+  const uploadStream = cloudinary.uploader.upload_stream(
+    {
+      folder: folderPath,
+      public_id: `receipt_${newBooking.transactionId}`,
+      resource_type: "raw",
+      use_filename: true,
+      unique_filename: false,
+    },
+    (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    }
+  );
+  uploadStream.end(receiptData.pdfBuffer); // 👈 رفع PDF Buffer مباشرة
+});
+
+// ✨ توليد PDF للإيصال
+const receiptData = await generateReceipt({
+  propertyName: property.hostelName,
+  fullName: `${newBooking.firstName} ${newBooking.lastName}`,
+  roomType: newBooking.roomType,
+  price: newBooking.price,
+  transactionId: newBooking.transactionId,
+});
+
+// ✅ تحديث الحجز برابط الإيصال من Cloudinary
+newBooking.receiptUrl = cloudinaryResult.secure_url;
+await newBooking.save();
 
 res.status(200).json({
   success: true,
   message: 'Booking successful',
   booking: {
     ...newBooking._doc,
-    propertyName: property?.hostelName || 'Unknown Property',
-    receiptUrl: `/receipt/${newBooking._id}`,
+    receiptUrl: cloudinaryResult.secure_url,
     qrCodeUrl: `/qrcode/${newBooking._id}`,
   },
 });
-
   } catch (error) {
     console.error('Error booking property:', error);
     res.status(500).json({ success: false, message: 'Failed to book property' });
