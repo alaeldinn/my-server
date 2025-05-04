@@ -933,13 +933,19 @@ app.get('/bookings/property/:propertyId', async (req, res) => {
 });
 
 
-// GET /bookings/property/:userId
-app.get('/bookings/property/:userId', async (req, res) => {
+// GET /bookings?userId=<userId>
+app.get('/bookings', async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { userId } = req.query;
 
-    // البحث عن الحجوزات بناءً على userId
-    const bookings = await Booking.find({ userId }).populate('propertyId');
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing userId in query parameters',
+      });
+    }
+
+    const bookings = await Booking.find({ userId }).populate('propertyId', 'hostelName');
 
     if (!bookings || bookings.length === 0) {
       return res.status(200).json({
@@ -949,10 +955,10 @@ app.get('/bookings/property/:userId', async (req, res) => {
       });
     }
 
-    // تنسيق البيانات لتطابق المتوقع من تطبيق Flutter
+    // تنسيق البيانات كما يريدها التطبيق
     const formattedBookings = bookings.map(booking => ({
       _id: booking._id,
-      propertyName: booking.propertyId?.hostelName || 'Unknown Property',
+      propertyName: booking.propertyId?.hostelName ?? 'Unknown Property',
       roomType: booking.roomType,
       createdAt: booking.bookingDate || booking.createdAt,
       price: booking.price,
@@ -967,8 +973,7 @@ app.get('/bookings/property/:userId', async (req, res) => {
     console.error('خطأ في جلب الحجوزات:', error);
     res.status(500).json({
       success: false,
-      message: 'فشل في جلب الحجوزات',
-      error: error.message,
+      error: 'Failed to load bookings',
     });
   }
 });
