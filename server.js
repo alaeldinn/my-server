@@ -1702,6 +1702,47 @@ app.get('/getAllUsers', async (req, res) => {
   }
 });
 
+app.get('/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // البحث عن المستخدم في قاعدة البيانات
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // إذا كان المستخدم موجودًا، نعيد بياناته
+    res.status(200).json({
+      success: true,
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phoneNumber,
+        gender: user.gender,
+        accountType: user.accountType,
+        profileImage: user.profileImage,
+        status: user.status,
+        createdAt: user.createdAt,
+      },
+    });
+
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error.message,
+    });
+  }
+});
+
 //(3)Notifications schema:
 const notificationSchema = new mongoose.Schema({
   title: {
