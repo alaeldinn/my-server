@@ -956,13 +956,23 @@ app.get('/bookings', async (req, res) => {
     }
 
     // تنسيق البيانات كما يريدها التطبيق
-    const formattedBookings = bookings.map(booking => ({
-      _id: booking._id,
-      propertyName: booking.propertyId?.hostelName ?? 'Unknown Property',
-      roomType: booking.roomType,
-      createdAt: booking.bookingDate || booking.createdAt,
-      price: booking.price,
-    }));
+   const formattedBookings = bookings.map(booking => ({
+  _id: booking._id,
+  propertyId: booking.propertyId ?? 'N/A',
+  ownerId: booking.ownerId ?? 'N/A',
+  userId: booking.userId ?? 'N/A',
+  firstName: booking.firstName ?? 'N/A',
+  lastName: booking.lastName ?? 'N/A',
+  email: booking.email ?? 'N/A',
+  phone: booking.phone ?? 'N/A',
+  roomType: booking.roomType ?? 'N/A',
+  price: booking.price ?? 0,
+  pricePeriod: booking.pricePeriod ?? 'N/A',
+  transactionId: booking.transactionId ?? 'N/A',
+  receiptUrl: booking.receiptUrl ?? 'N/A',
+  qrCodeUrl: booking.qrCodeUrl ?? 'N/A',
+  bookingDate: booking.bookingDate ?? new Date(),
+}));
 
     res.status(200).json({
       success: true,
