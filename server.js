@@ -932,6 +932,47 @@ app.get('/bookings/property/:propertyId', async (req, res) => {
   }
 });
 
+
+// GET /bookings/property/:userId
+app.get('/bookings/property/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // البحث عن الحجوزات بناءً على userId
+    const bookings = await Booking.find({ userId }).populate('propertyId');
+
+    if (!bookings || bookings.length === 0) {
+      return res.status(200).json({
+        success: true,
+        bookings: [],
+        message: 'لا توجد حجوزات لهذا المستخدم',
+      });
+    }
+
+    // تنسيق البيانات لتطابق المتوقع من تطبيق Flutter
+    const formattedBookings = bookings.map(booking => ({
+      _id: booking._id,
+      propertyName: booking.propertyId?.hostelName || 'Unknown Property',
+      roomType: booking.roomType,
+      createdAt: booking.bookingDate || booking.createdAt,
+      price: booking.price,
+    }));
+
+    res.status(200).json({
+      success: true,
+      bookings: formattedBookings,
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب الحجوزات:', error);
+    res.status(500).json({
+      success: false,
+      message: 'فشل في جلب الحجوزات',
+      error: error.message,
+    });
+  }
+});
+
 // دالة للتحقق من صحة رقم الهاتف (يمكن استبدالها بمكتبة مثل libphonenumber-js)
 function isValidPhoneNumber(phone) {
   // يمكن إضافة منطق للتحقق من صحة الرقم بناءً على رمز الدولة
