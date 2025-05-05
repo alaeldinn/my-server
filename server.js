@@ -674,6 +674,18 @@ const bookingSchema = new mongoose.Schema({
     ref: 'Property',
     required: true,
   },
+  hostelName: { 
+    type: String,
+    required: true
+  },
+  gender: { 
+    type: String,
+    required: true
+  },
+  state: { 
+    type: String,
+    required: true
+  },
   ownerId: {
     type: String,
     required: true,
@@ -846,10 +858,10 @@ app.post('/bookings', async (req, res) => {
     price,
     pricePeriod,
   } = req.body;
-    try {
+
+  try {
     const Property = mongoose.model('Property');
     const property = await Property.findById(propertyId);
-
     if (!property) {
       return res.status(404).json({ success: false, message: 'Property not found' });
     }
@@ -863,39 +875,40 @@ app.post('/bookings', async (req, res) => {
 
     if (roomType === 'Single') property.singleRooms -= 1;
     else if (roomType === 'Shared') property.sharedRooms -= 1;
-
     await property.save();
 
     const Booking = mongoose.model('Booking');
 
-  const newBooking = new Booking({
-  propertyId,
-  ownerId,
-  userId,
-  firstName,
-  lastName,
-  email,
-  phone,
-  roomType,
-  price,
-  pricePeriod,
-});
+    const newBooking = new Booking({
+      propertyId,
+      ownerId,
+      userId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      roomType,
+      price,
+      pricePeriod,
+      hostelName: property.hostelName,
+      state: property.state,
+      gender: property.gender
+    });
 
     await newBooking.save();
 
-
-
-res.status(200).json({
-  success: true,
-  message: 'Booking successful',
-  booking: {
-    ...newBooking._doc,
-    propertyName: property?.hostelName || 'Unknown Property',
-    receiptUrl: `/receipt/${newBooking._id}`,
-    qrCodeUrl: `/qrcode/${newBooking._id}`,
-  },
-});
-
+    res.status(200).json({
+      success: true,
+      message: 'Booking successful',
+      booking: {
+        ...newBooking._doc,
+        hostelName: property?.hostelName || 'Unknown Property',
+        state: property?.state || 'Unknown state',
+        gender: property?.gender || 'Unknown gender',
+        receiptUrl: `/receipt/${newBooking._id}`,
+        qrCodeUrl: `/qrcode/${newBooking._id}`,
+      },
+    });
   } catch (error) {
     console.error('Error booking property:', error);
     res.status(500).json({ success: false, message: 'Failed to book property' });
@@ -968,6 +981,9 @@ app.get('/bookings', async (req, res) => {
   roomType: booking.roomType ?? 'N/A',
   price: booking.price ?? 0,
   pricePeriod: booking.pricePeriod ?? 'N/A',
+  hostelName: booking.hostelName ?? 'N/A',
+  state: booking.state ?? 'N/A',
+  gender: booking.gender ?? 'N/A',
   transactionId: booking.transactionId ?? 'N/A',
   receiptUrl: booking.receiptUrl ?? 'N/A',
   qrCodeUrl: booking.qrCodeUrl ?? 'N/A',
