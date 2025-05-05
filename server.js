@@ -916,6 +916,118 @@ app.post('/bookings', async (req, res) => {
 });
 
 
+// GET /bookings/user/:userId - لجلبة كل حجوزات المستخدم
+app.get('/bookings/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // جلب الحجوزات مع معلومات العقار
+    const bookings = await Booking.find({ userId })
+      .populate('propertyId', 'hostelName imageUrls singleRoomPrice sharedRoomPrice state gender')
+      .sort({ bookingDate: -1 });
+
+    if (!bookings || bookings.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No bookings found for this user',
+        bookings: []
+      });
+    }
+
+    // تنسيق البيانات للإرسال
+    const formattedBookings = bookings.map(booking => ({
+      _id: booking._id,
+      propertyId: booking.propertyId?._id || null,
+      hostelName: booking.propertyId?.hostelName || booking.hostelName,
+      state: booking.propertyId?.state || booking.state,
+      gender: booking.propertyId?.gender || booking.gender,
+      roomType: booking.roomType,
+      price: booking.price,
+      pricePeriod: booking.pricePeriod,
+      transactionId: booking.transactionId,
+      receiptUrl: booking.receiptUrl,
+      qrCodeUrl: booking.qrCodeUrl,
+      bookingDate: booking.bookingDate,
+      propertyImage: booking.propertyId?.imageUrls?.[0] || null,
+      singleRoomPrice: booking.propertyId?.singleRoomPrice || 0,
+      sharedRoomPrice: booking.propertyId?.sharedRoomPrice || 0
+    }));
+
+    res.status(200).json({
+      success: true,
+      bookings: formattedBookings
+    });
+
+  } catch (error) {
+    console.error('Error fetching user bookings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user bookings'
+    });
+  }
+});
+
+
+// GET /bookings/:bookingId - لجلبة تفاصيل حجز معين
+app.get('/bookings/:bookingId', async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    // جلب الحجز مع معلومات العقار والمستخدم
+    const booking = await Booking.findById(bookingId)
+      .populate('propertyId', 'hostelName imageUrls singleRoomPrice sharedRoomPrice state gender')
+      .populate('userId', 'firstName lastName email phone');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // تنسيق البيانات للإرسال
+    const formattedBooking = {
+      _id: booking._id,
+      property: {
+        _id: booking.propertyId?._id || null,
+        hostelName: booking.propertyId?.hostelName || booking.hostelName,
+        state: booking.propertyId?.state || booking.state,
+        gender: booking.propertyId?.gender || booking.gender,
+        imageUrls: booking.propertyId?.imageUrls || [],
+        singleRoomPrice: booking.propertyId?.singleRoomPrice || 0,
+        sharedRoomPrice: booking.propertyId?.sharedRoomPrice || 0
+      },
+      user: {
+        _id: booking.userId?._id || null,
+        firstName: booking.userId?.firstName || booking.firstName,
+        lastName: booking.userId?.lastName || booking.lastName,
+        email: booking.userId?.email || booking.email,
+        phone: booking.userId?.phone || booking.phone
+      },
+      roomType: booking.roomType,
+      price: booking.price,
+      pricePeriod: booking.pricePeriod,
+      transactionId: booking.transactionId,
+      receiptUrl: booking.receiptUrl,
+      qrCodeUrl: booking.qrCodeUrl,
+      bookingDate: booking.bookingDate
+    };
+
+    res.status(200).json({
+      success: true,
+      booking: formattedBooking
+    });
+
+  } catch (error) {
+    console.error('Error fetching booking details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch booking details'
+    });
+  }
+});
+
+
 app.get('/bookings/property/:propertyId', async (req, res) => {
   try {
     const { propertyId } = req.params;
