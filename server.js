@@ -2437,6 +2437,55 @@ app.delete('/deleteUser/:id', async (req, res) => {
 });
 
 
+// نموذج الشروط
+const termsSchema = new mongoose.Schema({
+  content: { type: String, required: true },
+});
+
+// نموذج الشروط من MongoDB
+const Terms = mongoose.model('Terms', termsSchema);
+
+// نقطة النهاية لتحميل الشروط
+app.get('/api/terms', async (req, res) => {
+  try {
+    const terms = await Terms.findOne(); // نسترجع الشروط من قاعدة البيانات
+    if (terms) {
+      res.status(200).json({ content: terms.content });
+    } else {
+      res.status(404).json({ message: 'لم يتم العثور على الشروط' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'حدث خطأ في الخادم' });
+  }
+});
+
+// نقطة النهاية لحفظ الشروط
+app.post('/api/terms', async (req, res) => {
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({ message: 'المحتوى مفقود' });
+  }
+
+  try {
+    let terms = await Terms.findOne(); // تحقق من وجود الشروط بالفعل
+    if (terms) {
+      // إذا كانت الشروط موجودة، نقوم بتحديثها
+      terms.content = content;
+      await terms.save();
+    } else {
+      // إذا لم تكن الشروط موجودة، نقوم بإنشائها
+      terms = new Terms({ content });
+      await terms.save();
+    }
+    res.status(200).json({ message: 'تم حفظ الشروط بنجاح' });
+  } catch (error) {
+    res.status(500).json({ message: 'حدث خطأ في الخادم' });
+  }
+});
+
+
+
 
 // تشغيل الخادم على المنفذ المحدد
 app.listen(port, () => {
