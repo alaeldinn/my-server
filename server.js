@@ -2446,19 +2446,36 @@ const termsSchema = new mongoose.Schema({
 const Terms = mongoose.model('Terms', termsSchema);
 
 // نقطة النهاية لتحميل الشروط
+// GET /api/terms
 app.get('/api/terms', async (req, res) => {
   try {
     const terms = await Terms.findOne();
+
     if (terms) {
       console.log('✅ تم العثور على الشروط:', terms.content);
-      return res.status(200).json({ content: terms.content });
+      return res.status(200).json({
+        success: true,
+        data: {
+          _id: terms._id,
+          content: terms.content,
+          createdAt: terms.createdAt,
+          updatedAt: terms.updatedAt
+        },
+      });
     } else {
       console.warn('⚠️ لم يتم العثور على الشروط');
-      return res.status(404).json({ message: 'لم يتم العثور على الشروط' });
+      return res.status(404).json({
+        success: false,
+        message: 'لم يتم العثور على الشروط',
+      });
     }
   } catch (error) {
     console.error('❌ خطأ في جلب الشروط:', error.message);
-    return res.status(500).json({ message: 'حدث خطأ في الخادم' });
+    return res.status(500).json({
+      success: false,
+      message: 'حدث خطأ في الخادم',
+      error: error.message,
+    });
   }
 });
 
