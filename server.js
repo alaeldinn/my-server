@@ -2448,14 +2448,17 @@ const Terms = mongoose.model('Terms', termsSchema);
 // نقطة النهاية لتحميل الشروط
 app.get('/api/terms', async (req, res) => {
   try {
-    const terms = await Terms.findOne(); // نسترجع الشروط من قاعدة البيانات
+    const terms = await Terms.findOne();
     if (terms) {
-      res.status(200).json({ content: terms.content });
+      console.log('✅ تم العثور على الشروط:', terms.content);
+      return res.status(200).json({ content: terms.content });
     } else {
-      res.status(404).json({ message: 'لم يتم العثور على الشروط' });
+      console.warn('⚠️ لم يتم العثور على الشروط');
+      return res.status(404).json({ message: 'لم يتم العثور على الشروط' });
     }
   } catch (error) {
-    res.status(500).json({ message: 'حدث خطأ في الخادم' });
+    console.error('❌ خطأ في جلب الشروط:', error.message);
+    return res.status(500).json({ message: 'حدث خطأ في الخادم' });
   }
 });
 
@@ -2463,24 +2466,31 @@ app.get('/api/terms', async (req, res) => {
 app.post('/api/terms', async (req, res) => {
   const { content } = req.body;
 
-  if (!content) {
-    return res.status(400).json({ message: 'المحتوى مفقود' });
+  // 📌 التحقق من أن content موجود وبنوع صحيح
+  if (!content || typeof content !== 'string') {
+    console.warn('⚠️ المحتوى غير موجود أو ليس نصًا:', content);
+    return res.status(400).json({ message: 'المحتوى مفقود أو غير صالح' });
   }
 
   try {
-    let terms = await Terms.findOne(); // تحقق من وجود الشروط بالفعل
+    let terms = await Terms.findOne();
+
     if (terms) {
-      // إذا كانت الشروط موجودة، نقوم بتحديثها
+      // تحديث الشروط
       terms.content = content;
       await terms.save();
+      console.log('✅ تم تحديث الشروط بنجاح');
+      return res.status(200).json({ message: 'تم تحديث الشروط بنجاح' });
     } else {
-      // إذا لم تكن الشروط موجودة، نقوم بإنشائها
+      // إنشاء شروط جديدة
       terms = new Terms({ content });
       await terms.save();
+      console.log('✅ تم إنشاء الشروط لأول مرة');
+      return res.status(201).json({ message: 'تم إنشاء الشروط بنجاح' });
     }
-    res.status(200).json({ message: 'تم حفظ الشروط بنجاح' });
   } catch (error) {
-    res.status(500).json({ message: 'حدث خطأ في الخادم' });
+    console.error('❌ خطأ في حفظ الشروط:', error.message);
+    return res.status(500).json({ message: 'حدث خطأ في الخادم' });
   }
 });
 
