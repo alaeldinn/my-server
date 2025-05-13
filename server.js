@@ -916,6 +916,25 @@ app.post('/bookings', async (req, res) => {
 });
 
 
+// نقطة النهاية لجلب الحجوزات باستخدام ownerId
+app.get('/getBookingsByOwner/:ownerId', async (req, res) => {
+  const ownerId = req.params.ownerId;
+
+  try {
+    const bookings = await Booking.find({ ownerId: ownerId }); // جلب الحجوزات بناءً على ownerId
+    if (bookings.length > 0) {
+      res.json({ bookings });
+    } else {
+      res.status(404).json({ message: 'No bookings found for this owner.' });
+    }
+  } catch (error) {
+    console.error('Error fetching bookings:', error);
+    res.status(500).json({ message: 'Failed to load bookings' });
+  }
+});
+
+
+
 // GET /bookings/user/:userId - لجلبة كل حجوزات المستخدم
 app.get('/bookings/user/:userId', async (req, res) => {
   try {
@@ -1026,6 +1045,29 @@ app.get('/bookings/:bookingId', async (req, res) => {
     });
   }
 });
+
+
+app.post('/getPropertyById', async (req, res) => {
+  try {
+    const { propertyId } = req.body;
+
+    if (!propertyId) {
+      return res.status(400).json({ success: false, message: 'Property ID is required' });
+    }
+
+    const property = await Property.findById(propertyId);
+
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    res.status(200).json({ success: true, property });
+  } catch (error) {
+    console.error('Error fetching property:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
 
 
 app.get('/bookings/property/:propertyId', async (req, res) => {
@@ -1929,18 +1971,10 @@ app.get('/users/:userId', async (req, res) => {
 
 //(3)Notifications schema:
 const notificationSchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: true,
-  },
-  description: {
-    type: String,
-    required: true,
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 
@@ -1950,106 +1984,37 @@ module.exports = Notification;
 
 //(3.1)getAllNotifcations
 app.get('/notifications', async (req, res) => {
-  try {
-    const notifications = await Notification.find({}).sort({ createdAt: -1 }); // ترتيب حسب الأحدث
-    res.status(200).json({
-      success: true,
-      message: 'Notifications fetched successfully',
-      data: notifications,
-    });
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch notifications',
-      error: error.message,
-    });
-  }
+  const notifications = await Notification.find({}).sort({ createdAt: -1 });
+  res.status(200).json({ success: true, data: notifications });
 });
 
 //(3.2)Add Notifications:
 app.post('/notifications', async (req, res) => {
-  try {
-    const { title, description } = req.body;
-
-    if (!title || !description) {
-      return res.status(400).json({
-        success: false,
-        message: 'Title and description are required',
-      });
-    }
-
-    const newNotification = new Notification({
-      title,
-      description,
-    });
-
-    await newNotification.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Notification added successfully',
-      data: newNotification,
-    });
-  } catch (error) {
-    console.error('Error adding notification:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add notification',
-      error: error.message,
-    });
-  }
+  const { title, description } = req.body;
+  const newNotification = new Notification({ title, description });
+  await newNotification.save();
+  res.status(201).json({ success: true, data: newNotification });
 });
 
 //(3.3) Delet Notifications
 app.delete('/notifications/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    await Notification.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Notification deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting notification:', error);
-    res.status(500).json({ message: 'Failed to delete notification' });
-  }
+  await Notification.findByIdAndDelete(req.params.id);
+  res.status(200).json({ message: 'Deleted successfully' });
 });
 
 
 //(3.4)Resend Notifications
 app.post('/notifications/:id/resend', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const notification = await Notification.findById(id);
-    if (!notification) {
-      return res.status(404).json({ message: 'Notification not found' });
-    }
-    // هنا يمكن تنفيذ عملية إعادة الإرسال (مثل البريد الإلكتروني أو الإشعارات)
-    console.log(`Resending notification: ${notification.title}`);
-    res.status(200).json({ message: 'Notification resent successfully' });
-  } catch (error) {
-    console.error('Error resending notification:', error);
-    res.status(500).json({ message: 'Failed to resend notification' });
-  }
+  const notification = await Notification.findById(req.params.id);
+  // يمكنك هنا تنفيذ المنطق الفعلي لإعادة الإرسال
+  res.status(200).json({ message: 'Resent successfully' });
 });
 
 
 //(3.5)edit Notifications
 app.put('/notifications/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, description } = req.body;
-    const updatedNotification = await Notification.findByIdAndUpdate(
-      id,
-      { title, description },
-      { new: true }
-    );
-    if (!updatedNotification) {
-      return res.status(404).json({ message: 'Notification not found' });
-    }
-    res.status(200).json({ message: 'Notification updated successfully', data: updatedNotification });
-  } catch (error) {
-    console.error('Error updating notification:', error);
-    res.status(500).json({ message: 'Failed to update notification' });
-  }
+  const updated = await Notification.findByIdAndUpdate(id, { title, description }, { new: true });
+  res.status(200).json({ message: 'Updated successfully', data: updated });
 });
 
 
@@ -2439,77 +2404,275 @@ app.delete('/deleteUser/:id', async (req, res) => {
 
 // نموذج الشروط
 const termsSchema = new mongoose.Schema({
-  content: { type: String, required: true },
-});
+  content: {
+    type: String,
+    required: true,
+  },
+}, { timestamps: true });
 
-// نموذج الشروط من MongoDB
 const Terms = mongoose.model('Terms', termsSchema);
 
-// نقطة النهاية لتحميل الشروط
-// GET /api/terms
-app.get('/api/terms', async (req, res) => {
+// نقطة النهاية لجلب الشروط الأخيرة
+app.get('/terms/latest', async (req, res) => {
   try {
-    const terms = await Terms.findOne();
-
-    if (terms) {
-      console.log('✅ تم العثور على الشروط:', terms.content);
-      return res.status(200).json({
-        success: true,
-        data: {
-          _id: terms._id,
-          content: terms.content,
-          createdAt: terms.createdAt,
-          updatedAt: terms.updatedAt
-        },
-      });
-    } else {
-      console.warn('⚠️ لم يتم العثور على الشروط');
-      return res.status(404).json({
-        success: false,
-        message: 'لم يتم العثور على الشروط',
-      });
+    const latestTerms = await Terms.findOne().sort({ createdAt: -1 }); // جلب آخر الشروط
+    if (!latestTerms) {
+      return res.status(404).json({ message: 'لا توجد شروط محفوظة' });
     }
+    res.status(200).json(latestTerms);
   } catch (error) {
-    console.error('❌ خطأ في جلب الشروط:', error.message);
-    return res.status(500).json({
+    res.status(500).json({ message: 'حدث خطأ أثناء الجلب', error });
+  }
+});
+
+
+
+// نقطة النهاية لحفظ الشروط
+app.post('/terms', async (req, res) => {
+  try {
+    const { content } = req.body; // محتوى الشروط الذي يتم إرساله
+    const newTerms = new Terms({ content });
+    await newTerms.save();
+    res.status(200).json(newTerms);
+  } catch (error) {
+    console.error('حدث خطأ أثناء الحفظ:', error); // تسجيل الخطأ
+    res.status(500).json({ message: 'حدث خطأ أثناء الحفظ', error: error.message });
+  }
+});
+
+
+// نقطة النهاية لتحديث الشروط
+app.put('/terms/:id', async (req, res) => {
+  try {
+    const { content } = req.body;
+    const { id } = req.params;
+
+    const updatedTerms = await Terms.findByIdAndUpdate(id, { content }, { new: true });
+    if (!updatedTerms) {
+      return res.status(404).json({ message: 'الشروط غير موجودة' });
+    }
+
+    res.status(200).json(updatedTerms);
+  } catch (error) {
+    res.status(500).json({ message: 'حدث خطأ أثناء التحديث', error });
+  }
+});
+
+
+// نموذج FAQs
+const faqSchema = new mongoose.Schema({
+  question: {
+    type: String,
+    required: true
+  },
+  answer: {
+    type: String,
+    required: true
+  },
+  faqType: {
+    type: String,
+    required: true,
+    enum: ['General', 'Account', 'Payments', 'Technical', 'Other']
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+const FAQ = mongoose.model('FAQ', faqSchema);
+
+
+// الحصول على جميع FAQs
+app.get('/faqs', async (req, res) => {
+  try {
+    const faqs = await FAQ.find().sort({ createdAt: -1 });
+    res.status(200).json({
+      success: true,
+      data: faqs
+    });
+  } catch (error) {
+    res.status(500).json({
       success: false,
-      message: 'حدث خطأ في الخادم',
-      error: error.message,
+      message: 'Failed to fetch FAQs',
+      error: error.message
     });
   }
 });
 
-// نقطة النهاية لحفظ الشروط
-app.post('/api/terms', async (req, res) => {
-  const { content } = req.body;
-
-  // 📌 التحقق من أن content موجود وبنوع صحيح
-  if (!content || typeof content !== 'string') {
-    console.warn('⚠️ المحتوى غير موجود أو ليس نصًا:', content);
-    return res.status(400).json({ message: 'المحتوى مفقود أو غير صالح' });
-  }
-
+// إضافة FAQ جديد
+app.post('/faqs', async (req, res) => {
   try {
-    let terms = await Terms.findOne();
+    const { question, answer, faqType } = req.body;
 
-    if (terms) {
-      // تحديث الشروط
-      terms.content = content;
-      await terms.save();
-      console.log('✅ تم تحديث الشروط بنجاح');
-      return res.status(200).json({ message: 'تم تحديث الشروط بنجاح' });
-    } else {
-      // إنشاء شروط جديدة
-      terms = new Terms({ content });
-      await terms.save();
-      console.log('✅ تم إنشاء الشروط لأول مرة');
-      return res.status(201).json({ message: 'تم إنشاء الشروط بنجاح' });
+    if (!question || !answer || !faqType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Question, answer and FAQ type are required'
+      });
     }
+
+    const newFAQ = new FAQ({
+      question,
+      answer,
+      faqType
+    });
+
+    await newFAQ.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'FAQ added successfully',
+      data: newFAQ
+    });
   } catch (error) {
-    console.error('❌ خطأ في حفظ الشروط:', error.message);
-    return res.status(500).json({ message: 'حدث خطأ في الخادم' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add FAQ',
+      error: error.message
+    });
   }
 });
+
+// تحديث FAQ موجود
+app.put('/faqs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { question, answer, faqType } = req.body;
+
+    if (!question || !answer || !faqType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Question, answer and FAQ type are required'
+      });
+    }
+
+    const updatedFAQ = await FAQ.findByIdAndUpdate(
+      id,
+      { question, answer, faqType, updatedAt: Date.now() },
+      { new: true }
+    );
+
+    if (!updatedFAQ) {
+      return res.status(404).json({
+        success: false,
+        message: 'FAQ not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'FAQ updated successfully',
+      data: updatedFAQ
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update FAQ',
+      error: error.message
+    });
+  }
+});
+
+// حذف FAQ
+app.delete('/faqs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedFAQ = await FAQ.findByIdAndDelete(id);
+
+    if (!deletedFAQ) {
+      return res.status(404).json({
+        success: false,
+        message: 'FAQ not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'FAQ deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete FAQ',
+      error: error.message
+    });
+  }
+});
+
+// إعادة إرسال FAQ (إذا كنت تريد هذه الوظيفة)
+app.post('/faqs/:id/resend', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const faq = await FAQ.findById(id);
+
+    if (!faq) {
+      return res.status(404).json({
+        success: false,
+        message: 'FAQ not found'
+      });
+    }
+
+    // هنا يمكنك إضافة أي منطق لإعادة الإرسال إذا لزم الأمر
+    // مثلاً إرسال إشعار للمستخدمين بوجود تحديث في الـ FAQs
+
+    res.status(200).json({
+      success: true,
+      message: 'FAQ resent successfully',
+      data: faq
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend FAQ',
+      error: error.message
+    });
+  }
+});
+
+// الحصول على FAQs حسب النوع
+app.get('/faqs/type/:type', async (req, res) => {
+  try {
+    const { type } = req.params;
+    const faqs = await FAQ.find({ faqType: type }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: faqs
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch FAQs by type',
+      error: error.message
+    });
+  }
+});
+
+
+// الحصول على أنواع FAQs المتاحة
+app.get('/faqs/types', async (req, res) => {
+  try {
+    const faqTypes = ['General', 'Account', 'Payments', 'Technical', 'Other'];
+    res.status(200).json({
+      success: true,
+      data: faqTypes
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch FAQ types',
+      error: error.message
+    });
+  }
+});
+
+
 
 
 
