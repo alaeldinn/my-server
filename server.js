@@ -15,6 +15,7 @@ const app = express();
 const axios = require('axios');
 const stripe = require('stripe')('sk_test_51QfmCJKwGdbDTqjONl2F5gSRpVuTE4NEsfeuHYMnex8SRAu0uIex8PqpCBoXkJDyTMx9WfMsPoMX0T3QzdTmv6aQ00fLzBugFe');
 const port = 3001;
+const seedDatabase = require('./seed'); // استيراد وظيفة seedDatabase
 
 // إعداد CORS للسماح بالتواصل مع تطبيق Flutter
 app.use(cors());// إعداد Body parser لقراءة البيانات من الطلبات
@@ -22,9 +23,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 // الاتصال بقاعدة بيانات MongoDB
-mongoose.connect('mongodb+srv://ahmed:jFRDH2EgcI8AD9m4@cluster0.gcasm.mongodb.net/userDB?retryWrites=true&w=majority')
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((error) => console.log('Error connecting to MongoDB: ', error));
+// اتصال MongoDB
+mongoose.connect('mongodb+srv://ahmed:jFRDH2EgcI8AD9m4@cluster0.gcasm.mongodb.net/userDB?retryWrites=true&w=majority', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
+  console.log("Connected to MongoDB");
+
+  // تشغيل seedDatabase مرة واحدة فقط عند تشغيل السيرفر
+  seedDatabase();
+
+}).catch(err => {
+  console.error("MongoDB connection error:", err);
+});
 
 // إعداد Cloudinary
 cloudinary.config({
@@ -216,6 +227,52 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
     });
   }
 });
+
+
+
+// نقطة النهاية لتعبئة البيانات
+app.get('/seed', async (req, res) => {
+  if (req.query.run !== 'true') {
+    return res.status(400).json({
+      success: false,
+      message: "Please add ?run=true to run the seed script."
+    });
+  }
+
+  const result = await seedDatabase();
+  if (result.success) {
+    res.json({ message: "Database seeded successfully!" });
+  } else {
+    res.status(500).json({ error: result.error });
+  }
+});
+
+
+// === نقاط النهاية (Endpoints) ===
+
+// جلب جميع الولايات
+app.get('/api/states', async (req, res) => {
+  try {
+    const states = await State.find();
+    res.json(states);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// جلب الجامعات حسب الولاية
+app.get('/api/universities', async (req, res) => {
+  const { stateKey } = req.query;
+
+  try {
+    const universities = await University.find(stateKey ? { 'state.key': stateKey } : {});
+    res.json(universities);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
 
 // **تسجيل الدخول**
 app.post('/login', async (req, res) => {
@@ -606,9 +663,9 @@ app.post('/verify-otp', async (req, res) => {
   }
 });
 
-// دالة لحساب المسافة بين نقطتين باستخدام صيغة Haversine
+
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const earthRadius = 6371; // نصف قطر الأرض بالكيلومترات
+  const earthRadius = 6371; 
 
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
@@ -619,10 +676,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return earthRadius * c; // المسافة بالكيلومترات
+  return earthRadius * c; 
 }
 
-// دالة لتحويل الدرجات إلى راديان
+
 function toRadians(degree) {
   return degree * (Math.PI / 180);
 }
