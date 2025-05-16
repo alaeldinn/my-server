@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const KNN = require('ml-knn');
-const tf = require('@tensorflow/tfjs-node');
+
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -544,34 +544,43 @@ app.get('/getAllProperties', async (req, res) => {
 
 
 
-app.post('/api/recommend-properties', async (req, res) => {
+app.post('/getKNearestProperties', async (req, res) => {
+  const { lat, lng, state, k = 5 } = req.body;
+
+  if (!lat || !lng || !state) {
+      return res.status(400).json({ success: false, message: 'Missing required parameters' });
+  }
+
   try {
-    const { latitude, longitude, k = 5 } = req.body;
-    
-    // جلب جميع العقارات من قاعدة البيانات
-    const properties = await Property.find({});
-    
-    if (properties.length === 0) {
-      return res.status(404).json({ message: 'No properties found' });
-    }
-    
-    // تحضير البيانات للتدريب
-    const features = properties.map(prop => [prop.latitude, prop.longitude]);
-    const labels = properties.map((_, index) => index);
-    
-    // تدريب نموذج KNN
-    const knn = new KNN(features, labels, { k });
-    
-    // العثور على أقرب الجيران
-    const neighbors = knn.predict([[latitude, longitude]]);
-    
-    // الحصول على العقارات الموصى بها
-    const recommendedProperties = neighbors.map(idx => properties[idx]);
-    
-    res.json({ properties: recommendedProperties });
+      // جلب العقارات من نفس الولاية
+      const allProperties = await Property.find({ state });
+
+      // حساب المسافة باستخدام Euclidean Distance
+      const propertiesWithDistance = allProperties.map(property => {
+          const dx = property.location.lat - lat;
+          const dy = property.location.lng - lng;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          return {
+              ...property.toObject(),
+              distance,
+          };
+      });
+
+      // ترتيب العقارات حسب المسافة
+      propertiesWithDistance.sort((a, b) => a.distance - b.distance);
+
+      // اختيار أقرب k عقار
+      const nearestProperties = propertiesWithDistance.slice(0, k);
+
+      res.status(200).json({
+          success: true,
+          properties: nearestProperties,
+      });
+
   } catch (error) {
-    console.error('Error in KNN recommendation:', error);
-    res.status(500).json({ error: 'Internal server error' });
+      console.error('Error fetching KNN properties:', error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -641,46 +650,22 @@ app.post('/verify-otp', async (req, res) => {
   }
 });
 
-// دالة لحساب المسافة بين نقطتين باستخدام صيغة Haversine
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const earthRadius = 6371; // نصف قطر الأرض بالكيلومترات
-
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadius * c; // المسافة بالكيلومترات
-}
-
 // دالة لتحويل الدرجات إلى راديان
 function toRadians(degree) {
   return degree * (Math.PI / 180);
 }
 
 // إضافة نقطة نهاية جديدة في Express
-app.post('/getLocationRecommendations', async (req, res) => {
-  const { latitude, longitude } = req.body;
-
-  if (!latitude || !longitude) {
-    return res.status(400).json({ error: 'Latitude and longitude are required' });
-  }
+app.post('/getKNearestResidancesByLocation', async (req, res) => {
+  const { lat, lng, k = 5 } = req.body;
 
   try {
-    // جلب جميع العقارات من قاعدة البيانات
     const allProperties = await Property.find({});
 
-    // تحويل البيانات إلى التنسيق المطلوب
-    const propertiesWithDistances = allProperties.map((property) => {
-      const propertyLatitude = property.location.lat;
-      const propertyLongitude = property.location.lng;
-
-      // حساب المسافة بين العقار الحالي والموقع المحدد
-      const distance = calculateDistance(latitude, longitude, propertyLatitude, propertyLongitude);
+    const propertiesWithDistance = allProperties.map(property => {
+      const dx = property.location.lat - lat;
+      const dy = property.location.lng - lng;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
       return {
         ...property.toObject(),
@@ -688,16 +673,13 @@ app.post('/getLocationRecommendations', async (req, res) => {
       };
     });
 
-    // تصفية العقارات التي تبعد أقل من أو تساوي 10 كيلومترات
-    const recommendedProperties = propertiesWithDistances.filter(
-      (property) => property.distance <= 10
-    );
+    propertiesWithDistance.sort((a, b) => a.distance - b.distance);
 
-    // إرسال الاستجابة
-    res.status(200).json({ properties: recommendedProperties });
+    const nearestProperties = propertiesWithDistance.slice(0, k);
+
+    res.json({ success: true, properties: nearestProperties });
   } catch (error) {
-    console.error('Error fetching location recommendations:', error);
-    res.status(500).json({ error: 'Failed to fetch location recommendations' });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 });
 
@@ -1744,20 +1726,11 @@ app.get('/getPropertyRatings/:propertyId', async (req, res) => {
 });
 
 
-// دالة لحساب المسافة بين نقطتين باستخدام صيغة Haversine
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const earthRadius = 6371; // نصف قطر الأرض بالكيلومترات
-
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadius * c; // المسافة بالكيلومترات
+  // استخدام المسافة الإقليدية (Euclidean)
+  const dx = lat1 - lat2;
+  const dy = lon1 - lon2;
+  return Math.sqrt(dx * dx + dy * dy); // قيمة غير دقيقة بالكيلومترات ولكن مناسبة للمقارنة
 }
 
 // دالة لتحويل الدرجات إلى راديان
